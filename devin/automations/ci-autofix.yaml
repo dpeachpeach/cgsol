@@ -1,0 +1,48 @@
+key: ci_autofix
+name: CI autofix on devin/* branches
+enabled: true
+
+# One failing check maps to exactly one session. No branch point, so this is an
+# Automation rather than orchestrator logic — the failure names the work.
+trigger:
+  type: github
+  events: [check_suite.completed, workflow_run.completed]
+  repo: ${GITHUB_REPO}
+  conditions:
+    branch_matches: "devin/*"
+    conclusion_in: [failure, timed_out, startup_failure]
+
+playbook: ci_autofix
+max_acu_limit: 2
+tags:
+  - cgsol
+  - pipeline
+  - role:ci-fix
+  - source:automation
+
+# The attempt limit is enforced by the orchestrator (ci_rounds in the issue
+# metadata comment), because only it can see across sessions. This prompt
+# enforces the scope limit, which is per-session.
+prompt: |
+  A CI check failed on branch {{ branch }} in ${GITHUB_REPO}.
+
+  Failing check: {{ check_name }}
+  Run: {{ run_url }}
+  PR: {{ pr_url }}
+
+  Read the failing job log. Fix only what this check reports.
+
+  Rules:
+  - Do not set up the development environment. Do not run the test suite
+    locally. CI is the gate; it will tell you whether the fix worked.
+  - Do not weaken the gate to pass it: no deleting or skipping tests, no new
+    lint suppressions, no edits to .github/workflows/.
+  - Do not fix unrelated checks, and do not refactor beyond the failure.
+  - If the failure is not fixable within your ACU ceiling, or the fix requires a
+    decision a maintainer must make, stop and say so rather than guessing.
+
+  When your fix is pushed, update the issue this PR closes:
+  - checks now passing  -> remove `ci-failing` and `devin-fixing`, apply `human-review`
+  - still red, out of budget -> apply `escalation:ci-unfixable` and `human-review`
+
+  Then comment on the issue with the root cause in one or two sentences.

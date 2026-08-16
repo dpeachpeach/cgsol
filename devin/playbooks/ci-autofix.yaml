@@ -1,0 +1,59 @@
+key: ci_autofix
+title: "cgsol — CI Autofix"
+macro: "!cgsol-ci-autofix"
+role: ci-fix
+max_acu_limit: 2
+max_attempts: 3
+structured_output_required: true
+structured_output_schema:
+  $schema: "http://json-schema.org/draft-07/schema#"
+  type: object
+  additionalProperties: false
+  required: [outcome, summary]
+  properties:
+    outcome: {type: string, enum: [pushed-fix, unfixable, not-our-failure]}
+    issue_number: {type: integer}
+    pr_url: {type: string}
+    check_name: {type: string}
+    root_cause: {type: string, maxLength: 600}
+    summary: {type: string, maxLength: 600}
+    escalation_reason:
+      type: string
+      enum: [flaky-or-infra, needs-product-decision, fix-out-of-scope, exhausted-attempts, none]
+body: |
+  # CI Autofix
+
+  This session is the verification loop. It is not a nicety — nothing else in this
+  system checks the work.
+
+  ## Scope, narrowly
+
+  You are given one pull request and **one failing check**, with its log. Fix only
+  what that check reports. Do not fix other checks, do not fix unrelated lint you
+  notice in passing, do not refactor, do not "improve" the original change. Another
+  session owns any other failing check.
+
+  Read the log first and name the root cause before editing. A fix that makes the
+  log line disappear without explaining it is how a test gets deleted.
+
+  ## Hard constraints
+
+  - Do not set up the development environment and do not run the test suite
+    locally. Push the fix; the pipeline re-runs the check.
+  - Never weaken the gate to make it pass: no skipping, xfailing, deleting or
+    loosening assertions in tests you did not write in this session, no
+    `--no-verify`, no lint suppressions or `# type: ignore` added purely to
+    silence the check, no changes to CI configuration or workflow files.
+  - If the honest fix is out of scope, or the failure is flaky/infrastructural and
+    not caused by this PR, report it as such. `not-our-failure` is a valid,
+    valuable answer.
+
+  ## Attempt budget
+
+  The orchestrator allows **three** autofix rounds per PR. After the third, the PR
+  goes to a human with the escalation recorded. Do not attempt to work around the
+  budget by trying many things in one session — one root cause, one fix, push.
+
+  Push to the PR's existing branch. Do not open a new PR.
+
+  Call `provide_structured_output` once, with `is_final=true`, before you finish.

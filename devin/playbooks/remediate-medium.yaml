@@ -1,0 +1,40 @@
+key: remediate_medium
+title: "cgsol — Remediate (medium)"
+macro: "!cgsol-remediate-medium"
+role: worker
+tier: medium
+max_acu_limit: 3
+includes: [_worker_common.md]
+structured_output_required: true
+structured_output_schema:
+  $schema: "http://json-schema.org/draft-07/schema#"
+  type: object
+  additionalProperties: false
+  required: [outcome, issue_number, summary]
+  properties:
+    outcome: {type: string, enum: [pr-opened, escalated, no-change-needed]}
+    issue_number: {type: integer}
+    pr_url: {type: string}
+    branch: {type: string}
+    files_changed: {type: array, items: {type: string}}
+    summary: {type: string, maxLength: 600}
+    escalation_reason:
+      type: string
+      enum: [ambiguous-requirement, missing-context, larger-than-tiered, needs-approval, none]
+body: |
+  # Remediate — medium tier
+
+  Test coverage, small refactors, contained bug fixes with a clear reproduction.
+
+  You may **write** tests. You still may not **run** them: adding a test and
+  pushing it is how you ask CI whether you were right. Write the test so that its
+  failure message would tell a human what broke — you will not be watching it run.
+
+  Follow the repo's existing test layout, fixtures, and naming. A test that does
+  not look like its neighbours is a review comment even when it passes.
+
+  For refactors: preserve public interfaces unless the issue explicitly asks you to
+  change them, and keep the behavioural diff empty. If a refactor requires touching
+  more than a handful of files, stop and report `larger-than-tiered`.
+
+  Call `provide_structured_output` once, with `is_final=true`, before you finish.

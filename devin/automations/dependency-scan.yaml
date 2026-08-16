@@ -1,0 +1,40 @@
+key: dependency_scan
+name: Weekly dependency and vulnerability scan
+enabled: true
+
+# This is where the backlog comes from in steady state. The demo corpus was
+# seeded by hand once; after that, the queue refills itself.
+trigger:
+  type: schedule
+  cron: "0 6 * * 1"
+  timezone: UTC
+
+playbook: null
+max_acu_limit: 2
+tags:
+  - cgsol
+  - pipeline
+  - role:scan
+  - source:automation
+
+prompt: |
+  Scan ${GITHUB_REPO} for known-vulnerable and out-of-date dependencies.
+
+  Run `pip-audit` against the Python requirements and `npm audit --production`
+  in superset-frontend/. Installing what those two tools need is allowed; that
+  is the exception to the no-setup rule, because the scan *is* the work. Do not
+  build the app, do not run the test suite.
+
+  For each distinct finding that is not already an open issue, file one issue:
+  - title: `<package> <current> -> <fixed>: <advisory id>`
+  - body: advisory summary, severity, the fixed version, the manifest and line,
+    and whether it is a direct or transitive dependency
+  - no labels — the orchestrator triages everything from unlabelled, and a
+    scanner that pre-labels its own findings is bypassing triage
+
+  Deduplicate against open issues by advisory id before filing. If a package
+  appears in several manifests, that is one issue, not three.
+
+  Nothing here is individually urgent. Collectively it is the risk this whole
+  system exists to work off, so completeness matters more than prioritisation:
+  file everything you find and let triage decide.

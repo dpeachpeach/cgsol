@@ -1,0 +1,1252 @@
+# Seed corpus for the Devin take-home.
+# Source: real open issues from apache/superset, sanitized (see sanitize.py).
+# tier is intentionally null - triage assigns it, not the seed.
+
+meta:
+  source_repo: apache/superset
+  target_repo: ${GITHUB_REPO}
+  total: 22
+  eligible: 15
+  decline_candidates: 6
+  held_back: 34143
+
+issues:
+  - source: 36406
+    title: "[6.0.0rc3] Same color being picked twice in a chart when dashboard doesn't have a map_label_colors"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      Bug is that in a dashboard with more than 1 chart, the same color can be picked twice for a given chart. To reproduce, the dashboard needs to have an empty map_label_colors or an incomplete map_label_colors.
+
+      To reproduce:
+      1. Import the given superset dashboard [twice-same-color-bug.zip](https://github.com/user-attachments/files/23904698/twice-same-color-bug.zip)
+      2. Make sure the imported dashboard doesn't have a map_label_colors by calling the api `/api/v1/dashboard/{pk}` and check the field `json_metadata`
+      3. Go to the dashboard "Twice same color bug"
+      4. The 2nd charts "Call of duty Sales" is displaying the light blue color 2 times for "PC" and "Playstation" KO
+      5. If the bug doesn't appear refresh the page several times
+
+      To note:
+       - This happen regardless of the type of charts used
+       - This doesn't happen when you edit the dashboard first because the field map_label_colors is being filled while editing.
+       - When filling the map_label_colors by editing the dashboard, if the same color is picked twice, then the map_label_color will also be filled with twice the same color.
+       - Relying on fixing this bug by having a map_label_colors with all the possible values is not an optimal solution because it can be tricky to have the full list of labels for all charts and this break the theme system where the first colors are more likely to be used in the dashboard.
+       - To remove the map_label_colors you can call the api `/api/v1/dashboard/{pk}/colors` with the payload `{"map_label_colors": {}}`
+       - I reproduced it in superset 6.0.0rc3 and superset 5.0.0
+
+      ### Screenshots/recordings
+
+      We are using the superset theme which contains the following colors:
+       1. light blue
+       2. dark blue
+       3. green
+      For every chart the color picking logic is the same, the 1st label have the 1st color, 2nd label 2nd colors... If a label already have a picked color for the current dashboard then this color will be used.
+
+      In this example with have 2 charts. So 1st chart have labels: "Playstation", "Xbox" and 2nd chart have "PC", "Playstation", "Xbox"
+
+      On the first load:
+       - The 1st chart got loaded first so light blue is assigned to "Playstation" and dark blue to "Xbox"
+       - Then the 2nd chart is loaded, so light blue is assigned to "PC" and then the others labels already have a color in this dashboard so light blue goes to "Playstation" and dark blue to "Xbox"
+       - KO
+
+      On the 2nd load:
+       - The 2nd chart got loaded first so light blue is assigned to "PC" and dark blue to "Playstation" and green to "Xbox"
+       - Then 1st chart is loaded, all labels have assigned colors. So the colors are reused and dark blue goes to "Playstation" and green to "Xbox"
+       - OK
+
+      On the 3rd load:
+       - We are in the same case as the 1st load
+
+      Full video of the bug:
+      https://github.com/user-attachments/assets/a0c637e9-d633-4c43-9302-baf724832d99
+
+      Observed behaviour (1st load):
+      <img width="1506" height="929" alt="Image" src="https://github.com/user-attachments/assets/2c0c7e9c-f497-41a8-8be0-d96d3889b0aa" />
+
+      Expected behaviour (2nd load):
+      <img width="1506" height="929" alt="Image" src="https://github.com/user-attachments/assets/6ce53754-dc20-4b52-8c1a-3d226c904bb9" />
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      The STR are using the superset theme with the example datasource.
+      Before exporting the dashboard, the map_label_colors of the dashboard was emptied by calling the api.
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 36406. Originally filed 2025-12-03._
+
+  - source: 34143
+    title: "Mixed chart doesn't work with time comparison as it should (as does line chart)"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: true
+    body: |
+      ### Bug description
+
+      As you create a mixed chart and use the time comparison function, it doesn't show the "1 week ago" lines dotted, it shows both lines filled. If you change it to a regular line chart, it will dot the time comparison line normally.
+
+
+
+      ### Screenshots/recordings
+
+      ![Image](https://github.com/user-attachments/assets/7bf7a5ae-4987-4381-b879-48f729290562)
+      ![Image](https://github.com/user-attachments/assets/738766ce-5bb2-47a1-b185-d945e1063ed4)
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      I don't know
+
+      ### Node version
+
+      I don't know
+
+      ### Browser
+
+      Not applicable
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 34143. Originally filed 2025-07-11._
+
+  - source: 33757
+    title: "Tooltip ignores metric format in line charts (always shows dollar format) – Regression in 4.X"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      In most recent Superset, tooltips in line charts display metric values using a dollar format ($,.2f), even when:
+
+      - The metric is clearly set to a percentage format (e.g., .2%) in the axis config
+      - The "Show Values" option correctly displays the value as a percentage
+      - The Series Configuration > Display Format is set to .2%
+
+      This appears to be a regression from earlier versions (~4.0), where the tooltip respected the correct format defined per metric.
+
+      ### Screenshots/recordings
+
+      This is what I see (Show Values display them OK), but the tooltip is always formatting in $
+      <img width="800" alt="Image" src="https://github.com/user-attachments/assets/73485843-cefa-428f-b4be-7da85880903f" />
+
+      In a previous version of superset (a dev build – branch: master, commit: 1573c101a71d6ade1f24ac89f99c4c0998b429c7) the issue was not present. See:
+
+      <img width="808" alt="Image" src="https://github.com/user-attachments/assets/53ffd358-3726-4274-82eb-1b7df23d8fac" />
+
+      Both supersets use "Mixed chart" and all settings are just verbatim. In fact, the new superset is just a copy with an almost up to date master branch – as recent as last week).
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.11
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 33757. Originally filed 2025-06-12._
+
+  - source: 34615
+    title: "Calendar Heatmap widget does not respect Russian locale for month names"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: false
+    body: |
+      ## Screenshot
+
+      <img width="1616" height="653" alt="Image" src="https://github.com/user-attachments/assets/194783a1-4cdd-402d-991e-3b963058c63d" />
+
+      ## Description
+      Версия Superset: 5.0
+
+      Окружение:
+      ОС: Ubuntu 20.04
+      Браузер: Chrome 120
+
+      Ожидаемое поведение
+      В виджете "Календарная тепловая карта" названия месяцев должны отображаться на русском языке (например, "Январь", "Февраль") в соответствии с настройками локализации, заданными в superset_config.py:
+      BABEL_DEFAULT_LOCALE = "ru"
+      D3_TIME_FORMAT настроен с использованием русских названий месяцев.
+
+      Фактическое поведение
+      Названия месяцев в виджете "Календарная тепловая карта" отображаются на английском языке (например, "January", "February"), несмотря на указанные настройки локализации.
+
+      ---
+      _Imported from apache/superset issue 34615. Originally filed 2025-08-08._
+
+  - source: 33884
+    title: "\"/api/v1/dashboard\" endpoint returns a different response than the open api specification"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      When using the api to get a list of dashboards, the api returns a different response than the spec defines. I noticed this particularly with the `results.owners` property. The spec specifies an object returned but you actually get an array back of these user2 objects.
+
+      Not a huge issue but did cause some problems when using a generated client to make these API requests. Attached screenshots below.
+
+
+
+      ### Screenshots/recordings
+
+      ![Image](https://github.com/user-attachments/assets/ecf39c84-b407-494e-b914-11b40f089a0f)
+
+      ![Image](https://github.com/user-attachments/assets/73fe7a20-2075-490a-bab6-c222a9b15809)
+
+      ### Superset version
+
+      4.1.2
+
+      ### Python version
+
+      I don't know
+
+      ### Node version
+
+      I don't know
+
+      ### Browser
+
+      Not applicable
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 33884. Originally filed 2025-06-24._
+
+  - source: 35464
+    title: "[6.0.0rc2] Fetch error NOT FOUND /api/v1/_openapi in Swagger after setting SUPERSET_APP_ROOT"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: false
+    body: |
+      ## Description
+      When using Apache Superset 6.0.0rc2, the Swagger UI shows a fetch error:
+
+      ```
+      Fetch error
+      NOT FOUND /api/v1/_openapi
+      ```
+
+      This happens after setting the `SUPERSET_APP_ROOT` variable in `superset_config.py` to a custom root path (e.g., `/analytics`).
+
+      ## Steps to Reproduce
+      1. Set `SUPERSET_APP_ROOT` in `superset_config.py`, for example:
+      SUPERSET_APP_ROOT = "/analytics"
+
+      2. Restart Superset server.
+      3. Open Swagger UI, typically at `http://<host>:<port>/swagger/v1`.
+      4. Observe that the Swagger UI fails to load the OpenAPI specification with the above fetch error.
+
+      ## Expected Behavior
+      Swagger UI should load OpenAPI specification from the correct prefixed path, including the `SUPERSET_APP_ROOT` prefix. For example, if `SUPERSET_APP_ROOT = "/analytics"`, Swagger should fetch `/analytics/api/v1/_openapi`.
+
+      ## Actual Behavior
+      Swagger UI attempts to fetch the OpenAPI spec from `/api/v1/_openapi` without the prefix, causing a 404 NOT FOUND error.
+
+      ## Additional Information
+      - The root path prefix set by `SUPERSET_APP_ROOT` modifies all API endpoints.
+      - Swagger UI configuration needs adjustment to respect this root path prefix.
+      - The problem is known to affect custom root path and Swagger integration.
+      - Restarting Superset and reinitializing with `superset init` does not fix the issue alone.
+      - Proxy or reverse proxy configurations (e.g., Nginx) may also need matching prefix adjustments.
+
+      ## Possible Workarounds
+      - Adjust Swagger UI base path configuration to include the root prefix.
+      - Use full prefixed URLs when accessing API endpoints directly.
+      - Check relevant GitHub issues on prefix routing and Swagger UI integration.
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      6.0.0rc2
+
+      ### Python version
+
+      3.10
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 35464. Originally filed 2025-10-03._
+
+  - source: 31991
+    title: "duplicate iso code in iran's country map"
+    disposition: eligible
+    decline_reason: null
+    assessment: confident
+    tier: null
+    hold_back: false
+    body: |
+      in [iran GitHub GeoJSON Content](https://raw.githubusercontent.com/apache/superset/refs/heads/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/iran.geojson)  two IR-07 (for tehran and alborz) but thy are difrence.
+
+      also there is not IR-09 that one of then can replace with it
+
+      ---
+      _Imported from apache/superset issue 31991. Originally filed 2025-01-26._
+
+  - source: 32722
+    title: "Annotation layers are not imported/exported."
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      Hi! Since version 3.1.1 import of annotation layers of all types except AnnotationType.FORMULA stopped working.
+
+      The import has a filter_chart_annotations stub which filters out all annotation types except FORMULA.
+
+      Also if charts are used as annotation layers they are not included in the export.
+
+
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      4.1.1
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [ ] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [ ] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 32722. Originally filed 2025-03-18._
+
+  - source: 34328
+    title: "Duration column like \"0 days 00:01:54\" renders as NaN:NaN:NaN in Table chart"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      ### Summary
+
+      In Superset's Table chart, I'm trying to display a column that contains call durations, stored in the format `HH:MM:SS` in the database, for example:
+      00:01:54
+      00:02:36
+      00:02:38
+      00:02:42
+      00:00:29
+      00:00:42
+
+      However, in Superset, this column is rendered as `NaN:NaN:NaN`.
+
+      ---
+
+      ### Expected Result
+
+      I expect Superset to show the duration as it appears in the database, like:
+      00:01:54
+      00:02:36
+
+      superset：4.0.1
+
+
+      ### Screenshots/recordings
+
+      <img width="1431" height="782" alt="Image" src="https://github.com/user-attachments/assets/16bcdd25-55be-45d0-89cc-6c11154e1575" />
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [ ] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [ ] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 34328. Originally filed 2025-07-26._
+
+  - source: 36840
+    title: "UI Freeze When Clicking “Samples” Tab in Treemap Chart – Empty 200 Response"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      Hi! While I was working on superset issue 36807, I discovered another problem. When experimenting with Treemap charts in the Explore view, clicking the “Samples” tab triggers a request to /datasource/samples. The backend responds with HTTP 200 but an empty body. The frontend loader spins for a while, and then the UI freezes.
+
+      STEPS TO REPRODUCE IT:
+
+      1- Run Superset in Docker (latest dev build - Docker Compose).
+      2- Go to the charts tab and create a Treemap chart using any dataset.
+      3- Click the “Samples” tab (bottom right).
+      4- Observe loader spins, UI freezes, and no data shown.
+
+      Expected Behavior:
+      The Samples tab should display rows or show a “No data available” message or something like that.
+
+      Actual Behavior:
+      The UI freezes after receiving a 200 response with no content.
+
+
+      ### Screenshots/recordings
+
+      <img width="1914" height="956" alt="Image" src="https://github.com/user-attachments/assets/d7720c6e-feb2-46ec-b5fe-01020f41034d" />
+
+
+      HERE IS THE SCREEN RECORDING OF THAT EXACT ISSUE :
+
+      https://github.com/user-attachments/assets/2423b73e-52de-410e-9102-5bf4d67b04e6
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.11
+
+      ### Node version
+
+      18 or greater
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      Any Dataset will give the same response. I have checked it multiple times.
+
+      Backend log snippet :
+      POST /datasource/samples?force=false&datasource_type=table&datasource_id=1 HTTP/1.1" 200 -
+
+      ### Checklist
+
+      - [x] I have searched the Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors, and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 36840. Originally filed 2025-12-26._
+
+  - source: 34102
+    title: "Incorrect frontend Server pagination"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ## Screenshot
+
+      <img width="1406" height="207" alt="Image" src="https://github.com/user-attachments/assets/1f4d468f-13e8-4617-8a6d-e302d6ebee22" />
+
+      [drag & drop image(s) here!]
+
+      ## Description
+
+      This is buggy frontend pagination logic, since i updated to a fresher version of superset this happened. Launched superset from docker-compose.yml and set a production environment. Take any table and try to turn on the server pagination, so you can replicate the same problem
+      [describe the issue here!]
+
+      ## Design input
+      [describe any input/collaboration you'd like from designers, and
+      tag accordingly. For design review, add the
+      label `design:review`. If this includes a design proposal,
+      include the label `design:suggest`]
+
+      ---
+      _Imported from apache/superset issue 34102. Originally filed 2025-07-08._
+
+  - source: 34352
+    title: "Bar chart \"X-AXIS SORT BY\" options differ when \"DIMENSIONS\" is set"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      When creating a bar chart there is the option to sort the x-axis or y-axis when in horizontal mode. This dropdown option presents different values when a dimension is defined in the section "DIMENSIONS" compared to when there is no dimension defined.
+      In our case we want to order the x-axis by another column in our dataset, so we fill the "SORT BY" section as follows:
+
+      <img width="327" height="119" alt="Image" src="https://github.com/user-attachments/assets/6cc99191-f326-43d9-9ffe-4273d0082afe" />
+
+      then we get the following options to sort the x-axis, which work well and allow us to order the x-axis by that dataset column:
+
+      <img width="324" height="682" alt="Image" src="https://github.com/user-attachments/assets/c8376593-5dda-40f7-9de3-e16cf18aa01c" />
+
+      however, when we define a dimension to present our metric stacked by that dimension the options to sort the x-axis change to this:
+
+      <img width="325" height="703" alt="Image" src="https://github.com/user-attachments/assets/dee88e08-29aa-4fc3-9d24-82df0ab1f152" />
+
+      This way we are not able to order the x-axis by the order column in our dataset.
+
+      Thank you for your time in advance.
+
+      NOTE: Using the chart "Bar Chart (legacy)" we can achieve the intended x-axis ordering with the following configuration:
+
+      <img width="1568" height="737" alt="Image" src="https://github.com/user-attachments/assets/368963e8-811f-4d7f-aa99-d55cba4ba941" />
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      4.1.3
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 34352. Originally filed 2025-07-28._
+
+  - source: 33882
+    title: "Show value on stacked bar chart is incorrect"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      The stacking functionality for bar charts was introduced recently, but it broke the option to show bar values.
+
+      When selecting Only Total, then Instead of displaying the number for each bar, it now shows a single value for the entire cluster. In the example below, it should show two separate numbers, not just one.
+      ![Image](https://github.com/user-attachments/assets/8c322e4c-62fb-47bf-b8ca-fb60817d2304)
+
+
+
+      When Only Total is unselected, it is completely broken
+      ![Image](https://github.com/user-attachments/assets/54eeb504-faf1-43ee-8e34-92db824f6daa)
+
+
+
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 33882. Originally filed 2025-06-24._
+
+  - source: 36053
+    title: "GET /api/v1/dashboard/{pk}/filter_state/{key} does not return \"name\" property"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      There seems to be a bug with GET /api/v1/dashboard/{pk}/filter_state/{key} route in the API.
+
+      When i fire the API request for the first time i do not get "name" property in the response for applied filter state.
+
+      For some reason if i do a random change in current filters(for an example just add a random divider) the same filter state key shows me the name parameter in the API response.
+
+      Happens with master from 4th of november.
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [x] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 36053. Originally filed 2025-11-10._
+
+  - source: 33724
+    title: "Report - Date format in filters not using Timestamp Format"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      Issue: Report - Date format in filters not using Timestamp Format
+
+      This happens to any Date format filter.
+
+
+
+      Steps to recreate:
+
+      - Open a dashboard.
+      - Click 3 dots at the upper right, select Edit Chart
+      - Go to the Customize tab
+      - Select Timestamp Format: %d-%m-%Y %H:%M:%S
+      - Customize Columns ActivationDate and ExpiryDate uses the same date format
+
+      ![Image](https://github.com/user-attachments/assets/3c0443a4-10ba-47d3-9c71-a1dd1902fb6f)
+
+      Actual Result:
+
+      Activation Date and Expiry Date (or any date filter) uses %Y-%m-%d format
+
+      ![Image](https://github.com/user-attachments/assets/3abe24a0-befa-48db-9cad-b55acb47803e)
+
+      In edit filters, theres no date format option
+
+      ![Image](https://github.com/user-attachments/assets/b3dbf9a3-92d3-44db-a94a-31be38211ace)
+
+      Expected result:
+
+      All date and timestamp fields, follow the same date format. Or can be configured.
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      4.0.2
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 33724. Originally filed 2025-06-09._
+
+  - source: 31741
+    title: "Line chart legend resets it's state whenever you scroll down the page"
+    disposition: eligible
+    decline_reason: null
+    assessment: plausible
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      1. Create a dashboard long enough that you have to scroll down
+      2. Create a line chart with legends on
+      3. Select any category, using inv or all or only one
+      4. Scroll down until you can't see the chart anymore
+      5. Go back to it, the state of the legend will be reset
+
+      ### Screenshots/recordings
+
+      ![chart_error_1](https://github.com/user-attachments/assets/d7ba6592-daeb-4e97-a7f9-e35f02068f74)
+
+
+      ### Superset version
+
+      4.0.2
+
+      ### Python version
+
+      I don't know
+
+      ### Node version
+
+      I don't know
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      We are using Apache Druid
+
+      ### Checklist
+
+      - [X] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [X] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [X] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 31741. Originally filed 2025-01-07._
+
+  - source: 33756
+    title: "Row limit shouldn't carry over when chart type is switched"
+    disposition: decline
+    decline_reason: product-semantics
+    assessment: declined
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      In Superset 4.1.2, I make a pie chart (default row limit 100). Looks good. Then I switch to a line chart showing different dimensions over time. The values carry over - which is good, except the row limit is still 100. If I had started with a blank new line chart it would be the chart default value of 10000.
+
+      The value of 100 is good for a pie chart but on a line chart will likely cause the immediate truncation of data.
+
+      IMO the right behavior would be to not carry over the row limit when chart type is switched and instead adopt the new chart type's default.
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      4.1.2
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Firefox
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [ ] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [ ] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 33756. Originally filed 2025-06-12._
+
+  - source: 36876
+    title: "Native Filters: “Clear All” should immediately clear and apply filters without requiring Apply"
+    disposition: decline
+    decline_reason: product-semantics
+    assessment: declined
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      In dashboards using Native Filters, clicking Clear All only resets the filter UI state but does not actually apply the change until the user manually clicks Apply Filters.
+
+      This behavior is unintuitive and leads users to believe filters are cleared, while the dashboard data remains filtered until Apply is clicked.
+
+      Environment
+
+      Superset version: 5.x / 6.0.0
+
+      Dashboard with Native Filters
+
+      Default filter behavior (no custom flags)
+
+      Steps to reproduce
+
+      Open a dashboard with Native Filters
+
+      Apply one or more filters
+
+      Click Clear All
+
+      Observe that:
+
+      Filter controls reset
+
+      Dashboard data remains filtered
+
+      Click Apply Filters
+
+      Dashboard finally updates
+
+      Expected behavior
+
+      Clicking Clear All should:
+
+      Immediately clear all applied filters
+
+      Trigger the filter application automatically
+
+      Update the dashboard data without requiring an additional Apply click
+
+      Actual behavior
+
+      Clear All only resets filter inputs
+
+      Filters are still applied until Apply is clicked
+
+      Users must perform two actions for a single intent
+
+      Why this matters
+
+      “Clear All” strongly implies a completed action
+
+      Requiring Apply after Clear All is confusing for users
+
+      This behavior differs from most BI tools and UX expectations
+
+      Causes frequent user errors and support questions
+
+      Suggested solutions (one or more)
+
+      Automatically trigger Apply when Clear All is clicked
+
+      OR provide a setting:
+
+      “Auto-apply Clear All”
+
+      OR make Clear All bypass Apply entirely
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      6.0.0
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      _No response_
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 36876. Originally filed 2025-12-31._
+
+  - source: 34682
+    title: "Option to preserve chart visibility during refresh instead of hiding the chart"
+    disposition: decline
+    decline_reason: feature-request
+    assessment: declined
+    tier: null
+    hold_back: false
+    body: |
+      ## Screenshot
+
+      <img width="1439" height="739" alt="Image" src="https://github.com/user-attachments/assets/be8c2047-7882-460f-a1ef-0e6cc3271aca" />
+
+      ## Description
+
+      Currently, when a dashboard refreshes, Superset hides each chart and shows only the loading animation until the new data is rendered. On dashboards with multiple charts refreshing at different speeds, this can cause noticeable flickering and distracting visual changes, especially for users who monitor dashboards continuously.
+
+      **Are there any specific reasons for fully hiding charts during refresh beyond emphasizing the loading state and ensuring loading animation visibility?**
+
+      ## Proposed Improvement
+      In many use cases, keeping the previous chart visible until the updated data is ready would create a more subtle, less disruptive user experience. This way, users would simply see the chart update once the refresh completes, without repeated disappear/reappear cycles. If the main concern with preserving chart visibility is ensuring that the loading animation remains noticeable, a more flexible approach could be to allow configuring the loading indicator’s position and style — for example, placing it in a specific location within the chart area (e.g. header whitespace in the chart corner), so it remains visible without interfering with the chart content. This would keep the loading feedback clear and accessible while minimizing disruption to users who are actively monitoring dashboards.
+
+      ### Some things I have done
+      For our needs, I’ve modified the `Chart.tsx` component to call `renderChartContainer()` even during loading, overlaying the chart with the loading animation instead of replacing it. This could be considered as a potential default behavior in Superset.
+
+      However, the most flexible approach would be to make this configurable — for example, adding a checkbox in the "Edit chart" options to allow users to choose whether charts remain visible during refresh. I’ve tested this by:
+      1. Adding a new `CheckboxControl` in `sharedControls.tsx`
+      2. Accessing the checkbox control’s value from `formData` in `Chart.tsx` to control `renderChartContainer()` based on the user’s choice and loading state
+      3. Updating `controlPanel.tsx` for the desired chart type to include the new control
+
+      However, this currently requires applying step 3 to each chart type’s `controlPanel.tsx`. Is there a more efficient way to make this available across all chart types?
+
+      ## Design input
+      What is the Superset team’s opinion and vision on this? If you agree this could improve UX, I’m happy to open a PR with an implementation.
+      kasiazjc rusackas mistercrunch
+
+      Thanks in advance!
+      Best regards!
+
+      ---
+      _Imported from apache/superset issue 34682. Originally filed 2025-08-13._
+
+  - source: 36223
+    title: "Admin UI: allow administrators to change/reset another user's password"
+    disposition: decline
+    decline_reason: security-design
+    assessment: declined
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      Currently (using Superset 6.0.0rc2) there is no straightforward, documented way for a Superset admin to change or reset another user's password from the web UI. This makes account recovery and user management harder for operators and requires server-side or DB access to reset passwords.
+
+      ### Why this matters
+      Operators and helpdesk staff need a safe in-product way to reset user passwords without direct DB edits or ad-hoc scripts. Relying on manual DB changes is error-prone and a security/operational burden.
+
+      ### Expected behavior
+      In Security → List Users (or on the "edit users" page), a site admin should be able to click "Reset password" (or similar), provide a new password, confirm and save; the user's password is updated and they can sign in with the new credentials
+
+      Optionally: audit log entry created when an admin changes someone else's password for traceability.
+
+      Action requires an Admin role (or a configurable permission).
+
+      ### Workaround
+      (documented so admins can use it while the feature is implemented)
+
+      ```
+      docker exec -it superset_app superset fab reset-password \
+        --username "Joe User" --password "password"
+      ```
+
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      master / latest-dev
+
+      ### Python version
+
+      3.10
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Chrome
+
+      ### Additional context
+
+      Superset Version 6.0.0rc2
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 36223. Originally filed 2025-11-21._
+
+  - source: 36670
+    title: "Improve typography hierarchy and consistency in explore panel"
+    disposition: decline
+    decline_reason: design-review
+    assessment: declined
+    tier: null
+    hold_back: false
+    body: |
+      ## Screenshot
+
+      <img width="310" height="594" alt="Image" src="https://github.com/user-attachments/assets/5dd4c1b2-334e-45a0-b804-bd7ee2692949" />
+
+      <img width="626" height="672" alt="Image" src="https://github.com/user-attachments/assets/df1239e6-9338-46ab-b8f7-f440221173c5" />
+
+      <img width="601" height="917" alt="Image" src="https://github.com/user-attachments/assets/f30e2cb6-3e1b-439c-bd9c-1de9d8df7e4e" />
+
+      ## Description
+      There are typography inconsistencies in the widget settings/sidebar panels that affect visual hierarchy and readability. The current implementation uses multiple font weights for titles within inner blocks and inconsistent font sizes between input fields and dropdown selectors.
+
+      #### Current Issues
+      - Inconsistent font weights: Titles within inner settings blocks use varying font weights, creating visual noise rather than clear hierarchy
+      - Font size mismatch: Text inside input fields and dropdown selectors has different sizes, breaking visual alignment
+      - Poor contrast: The lack of consistent typography makes information blocks less scannable and structured
+
+      #### Expected Behavior
+      - Uniform titles: Use a single, consistent font weight for all titles within widget settings inner blocks
+      - Consistent inputs: Apply the same font size to text in both input fields and dropdown selectors
+      - Enhanced hierarchy: Create clear visual contrast between different information levels through spacing and size (not through multiple font weights)
+
+      ---
+      _Imported from apache/superset issue 36670. Originally filed 2025-12-16._
+
+  - source: 33900
+    title: "Color Collisions on Cartodiagram Plugin"
+    disposition: decline
+    decline_reason: algorithm-policy
+    assessment: declined
+    tier: null
+    hold_back: false
+    body: |
+      ### Bug description
+
+      The charts rendered through the cartodiagram plugin might run into color collisions for cases when the sets of labels differ. This might lead to confusion and misinterpretation of the data, since two distinct labels might share the same color and/or a label might be assigned different colors, within a single cartodiagram.
+
+      Given following dataset:
+
+      | geom | value | category |
+      | --- | --- | --- |
+      |{ "coordinates": [ 10.021094598147045, 51.12881242291189 ], "type": "Point" } | 1 | far |
+      |{ "coordinates": [ 10.021094598147045, 51.12881242291189 ], "type": "Point" } | 1 | faz |
+      |{ "coordinates": [ 9.573277401918602, 50.77733656456951 ], "type": "Point" } | 1 | bar |
+      |{ "coordinates": [ 9.573277401918602, 50.77733656456951 ], "type": "Point" } | 1 | baz |
+
+      The first two items and the last two items share the same location, respectively, but have different categories on each location.
+
+      If we create a pie chart based on this dataset (using `category` as dimension) and then reference this pie chart in the cartodiagram plugin, following two charts will be created on a map:
+
+      ![Image](https://github.com/user-attachments/assets/55504cae-ee32-47ac-853b-305f2fd1ece2)
+
+      As you can see, the same colors will be applied for both charts, even though the labels differ completely (`far` and `faz` for the first chart, `bar` and `baz` for the second chart).
+
+      I would expect that each label has a distinct color throughout the charts contained in the cartodiagram, and that a single color is not used by two different labels.
+
+      ### Screenshots/recordings
+
+      _No response_
+
+      ### Superset version
+
+      5.0.0
+
+      ### Python version
+
+      3.9
+
+      ### Node version
+
+      16
+
+      ### Browser
+
+      Not applicable
+
+      ### Additional context
+
+      In our superset fork, I already created a fix on dashboard level (see terrestris/superset item 23). Here, I can manually register all labels in the `LabelsColorMapSingleton` before creating the single charts. The result looks as follows:
+
+      ![Image](https://github.com/user-attachments/assets/79bdf699-dfe9-4a62-8685-85d5ef45d6a4)
+
+      However, the provided approach only works in the context of dashboards - it does not work in the explore view, and thus it does not work when embedding a single chart directly. There, the `LabelsColorMapSingleton` is not being used but instead a label map for each distinct chart will be created.
+
+      In order to solve this problem, we probably have to adjust the approach on how colors will be assigned during chart rendering.
+
+      villebro Before doing any changes here, it would be great to get some feedback regarding a feasible approach for that, as otherwise I might oversee some cases.
+
+      ### Checklist
+
+      - [x] I have searched Superset docs and Slack and didn't find a solution to my problem.
+      - [x] I have searched the GitHub issue tracker and didn't find a similar bug report.
+      - [ ] I have checked Superset's logs for errors and if I found a relevant Python stacktrace, I included it here as text in the "additional context" section.
+
+      ---
+      _Imported from apache/superset issue 33900. Originally filed 2025-06-25._
+

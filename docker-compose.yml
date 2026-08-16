@@ -1,0 +1,45 @@
+name: cgsol
+
+services:
+  orchestrator:
+    build:
+      context: .
+    environment:
+      # Replay is the default so `make up` needs no credentials at all.
+      REPLAY: ${REPLAY:-true}
+      RECORD: ${RECORD:-false}
+      GITHUB_REPO: ${GITHUB_REPO:-dpeachpeach/superset-cg}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      DEVIN_API_KEY: ${DEVIN_API_KEY:-}
+      DEVIN_ORG_ID: ${DEVIN_ORG_ID:-}
+      PLAYBOOK_TRIAGE_SCOUT: ${PLAYBOOK_TRIAGE_SCOUT:-}
+      PLAYBOOK_REMEDIATE_TRIVIAL: ${PLAYBOOK_REMEDIATE_TRIVIAL:-}
+      PLAYBOOK_REMEDIATE_MEDIUM: ${PLAYBOOK_REMEDIATE_MEDIUM:-}
+      PLAYBOOK_REMEDIATE_HARD: ${PLAYBOOK_REMEDIATE_HARD:-}
+      PLAYBOOK_CI_AUTOFIX: ${PLAYBOOK_CI_AUTOFIX:-}
+      KNOWLEDGE_SUPERSET_CONVENTIONS: ${KNOWLEDGE_SUPERSET_CONVENTIONS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      orchestrator:
+        # Not just "started": the board must never render an empty state that
+        # looks like a bug, and /healthz blocks until the first sync completes.
+        condition: service_healthy
+
+  # Only needed in live mode: GitHub has to reach the webhook receiver, and
+  # nobody should have to install a tunnel client to run this.
+  smee:
+    image: deltaprojects/smee-client:latest@sha256:20ea24c8c81bb3f3aa332c8939503e3c5bee048bb5a98ba2249d73a41a556e33
+    profiles: ["live"]
+    command: ["--url", "${SMEE_URL}", "--target", "http://orchestrator:8000/webhook/github"]
+    depends_on:
+      orchestrator:
+        condition: service_healthy

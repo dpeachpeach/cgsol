@@ -1,0 +1,40 @@
+key: pr_review
+name: Review PRs opened by Devin
+enabled: true
+
+# Every Devin PR gets reviewed. No portfolio decision, no budget policy, no
+# branch point — an Automation is the right shape.
+trigger:
+  type: github
+  events: [pull_request.opened, pull_request.ready_for_review]
+  repo: ${GITHUB_REPO}
+  conditions:
+    branch_matches: "devin/*"
+
+playbook: null
+max_acu_limit: 1.5
+tags:
+  - cgsol
+  - pipeline
+  - role:review
+  - source:automation
+
+prompt: |
+  Review {{ pr_url }} in ${GITHUB_REPO}. It was opened by an agent against the
+  issue it says it closes.
+
+  Review it the way a maintainer would review a drive-by contribution from
+  someone with no context on the codebase:
+
+  - Does it actually address the linked issue, or something adjacent to it?
+  - Is the blast radius the smallest one that fixes the problem?
+  - Does it follow the conventions already visible in the files it touches?
+  - Does it weaken any check — deleted assertions, new suppressions, skipped
+    tests, relaxed types? Say so loudly if it does; that is the failure mode
+    that matters most here.
+
+  Do not run the test suite and do not set up the environment. CI is the gate.
+  Read the diff.
+
+  Post the review as a PR review comment. If you find something disqualifying,
+  request changes and apply `human-review` to the linked issue.

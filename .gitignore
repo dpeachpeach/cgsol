@@ -1,0 +1,15 @@
+# A leaked key in git history ends a candidacy regardless of the system.
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+node_modules/
+frontend/dist/

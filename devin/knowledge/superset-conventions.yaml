@@ -1,0 +1,83 @@
+key: superset_conventions
+name: "cgsol — Superset fork conventions"
+trigger_description: >-
+  When working in the dpeachpeach/superset-cg fork (or any apache/superset checkout):
+  repository layout, lint/type commands, branch and PR conventions, and which CI
+  checks gate a pull request.
+pinned_repo: "dpeachpeach/superset-cg"
+body: |
+  # Superset fork conventions (cgsol pipeline)
+
+  This repo is a fork of `apache/superset` used as the work queue for an
+  agent-driven maintenance pipeline. Issues here are adapted copies of upstream
+  issues; the upstream project is not affected by anything you do.
+
+  ## The one rule that overrides your instincts
+
+  Sessions in this pipeline **do not build a working Superset environment**. No
+  `pip install -r requirements/*.txt`, no `npm ci` in `superset-frontend/`, no
+  `docker compose up`, no `pytest`, no `superset run`. Superset's bootstrap costs
+  more than most of the fixes are worth, and the fork's own CI already runs the
+  real thing on every push. Write the change, lint the changed files, push.
+
+  ## Layout
+
+  - `superset/` — Flask application, SQLAlchemy models, `superset/migrations/`
+    (Alembic; a PR may only add one migration head).
+  - `superset-frontend/` — React/TypeScript monorepo; plugins live under
+    `superset-frontend/plugins/` and `superset-frontend/packages/`.
+  - `superset-websocket/` — Node websocket service.
+  - `docs/` — Docusaurus site.
+  - `helm/`, `docker/` — deployment.
+  - `tests/` — Python tests (`tests/unit_tests/` is the fast, DB-free subset).
+    Frontend tests sit next to their source as `*.test.tsx`.
+
+  ## Lint / type — changed files only
+
+  - Python: the repo is pre-commit driven. `pre-commit run --files <paths>` runs
+    ruff (lint + format) and mypy exactly as CI does. Installing `pre-commit`
+    alone is acceptable; installing the app's dependency tree is not.
+  - Frontend: `npx prettier --write <paths>` and `npx eslint <paths>` from
+    `superset-frontend/`. `npx tsc --noEmit` type-checks the whole project and is
+    usually too slow to be worth it — CI runs it.
+
+  ## Branch, commit, PR
+
+  - Branch: `devin/issue-<number>-<short-slug>`. The orchestrator correlates
+    sessions to issues by this name as well as by session tags.
+  - Commit subject follows conventional commits, as upstream does:
+    `fix(explore): ...`, `chore(deps): ...`, `test(unit): ...`.
+  - PR body must contain `Closes #<number>`.
+  - Never edit `.github/workflows/**` — those files are the gate, and changing
+    them invalidates the verification model.
+
+  ## What CI actually runs (the gate)
+
+  Relevant workflows in `.github/workflows/`:
+
+  - `pre-commit.yml` — ruff, format, mypy. Fires on every PR. The most common
+    red check, and the cheapest to fix.
+  - `superset-python-unittest.yml` — Python unit tests across supported versions.
+  - `superset-python-integrationtest.yml` — integration tests (Postgres/MySQL);
+    slow, and frequently the source of flakes unrelated to a given diff.
+  - `superset-frontend.yml` — jest + eslint + tsc for `superset-frontend/`.
+  - `superset-e2e.yml`, `superset-playwright.yml` — browser E2E; treat failures
+    here as likely-flaky unless the diff touches the exercised surface.
+  - `enforce-single-migration-head.yml`, `check-db-migration-confict.yml` — fail
+    when a PR adds a second Alembic head. If you touched migrations and this is
+    red, the fix is to rebase the migration onto the current head, not to edit
+    the check.
+  - `dependency-review.yml`, `codeql-analysis.yml` — security gates on
+    dependency and code changes.
+  - `pr-lint.yml` — PR title must be a valid conventional-commit subject.
+
+  A PR is "green" for this pipeline's purposes when every **required** check on
+  the default branch's protection rules has concluded successfully; advisory
+  checks (nightly, docs previews) do not gate.
+
+  ## Escalate rather than guess
+
+  Superset carries a lot of product surface. If an issue turns on what the
+  product *should* do — default chart behavior, locale policy, permission model —
+  that is a maintainer's call, not yours. Escalate with
+  `ambiguous-requirement` and say what the two plausible behaviors are.
