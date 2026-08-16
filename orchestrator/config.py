@@ -73,7 +73,11 @@ class Settings(BaseSettings):
     triage_interval_seconds: float = 1800
 
     # --- Policy ---------------------------------------------------------------
-    confidence_threshold: float = 0.6
+    #: A verdict below this is routed to a human instead of a worker. Off by
+    #: default: the analyst's own eligibility call is the gate, and a confident
+    #: wrong answer is not less likely than a hesitant right one. Raise it to
+    #: buy review at the cost of throughput.
+    confidence_threshold: float = 0.0
     max_ci_rounds: int = 3
     max_concurrent_workers: int = 6
     scout_batch_max: int = 25

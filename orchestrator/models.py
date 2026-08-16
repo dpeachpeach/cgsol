@@ -74,6 +74,19 @@ class SessionInfo(BaseModel):
         return None
 
     @property
+    def issue_numbers(self) -> list[int]:
+        """Every issue this session was started for. A scout batch carries one
+        tag per issue, and that list is what its output has to cover."""
+        numbers: list[int] = []
+        for tag in self.tags:
+            if tag.startswith("issue:"):
+                try:
+                    numbers.append(int(tag.split(":", 1)[1]))
+                except ValueError:
+                    continue
+        return numbers
+
+    @property
     def terminal(self) -> bool:
         return self.status in {"exit", "error", "expired"} or self.status_enum in {
             "finished",

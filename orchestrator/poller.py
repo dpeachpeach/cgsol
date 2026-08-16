@@ -163,7 +163,23 @@ class Poller:
                     log.warning("scout %s produced no verdicts", detail.session_id)
                     return True
                 return False
+            # Structured output is readable while the session is still writing
+            # it, so a batch can be seen half-finished. Apply what is there —
+            # a verdict is worth having early, and applying is idempotent — but
+            # only stop polling once every issue in the batch is accounted for,
+            # or the session ends and the rest is never coming.
             await self.dispatcher.apply_verdicts(verdicts)
+            expected = set(detail.issue_numbers)
+            missing = expected - {verdict.issue_number for verdict in verdicts}
+            if missing and not detail.terminal:
+                log.info(
+                    "scout %s has %d/%d verdicts; waiting for %s",
+                    detail.session_id,
+                    len(expected) - len(missing),
+                    len(expected),
+                    sorted(missing),
+                )
+                return False
             await self.store.publish("scout.finished", {"verdicts": len(verdicts)})
             return True
 

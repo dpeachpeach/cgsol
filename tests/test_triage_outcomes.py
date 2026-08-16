@@ -145,6 +145,50 @@ async def test_a_waiting_scout_holding_verdicts_is_not_left_holding_them() -> No
     assert devin.gets == 1  # consumed once, then never fetched again
 
 
+async def test_a_half_written_batch_is_applied_but_not_written_off() -> None:
+    """Structured output is readable while the session is still writing it. The
+    verdicts present are worth applying; the ones missing are not lost by
+    calling the session consumed."""
+    store, github = store_with_issue(), FakeGitHub()
+    store.upsert_issue(
+        Issue.model_validate(
+            {"number": 8, "title": "second", "labels": ["needs-triage"], "state": "open"}
+        )
+    )
+    session = scout_session("waiting_for_user", {"verdicts": [verdict().model_dump(mode="json")]})
+    devin = FakeDevin(session.model_copy(update={"tags": [*session.tags, "issue:7", "issue:8"]}))
+    poller = poller_for(devin, store, dispatcher_for(store, github))
+
+    await poller.poll_sessions()
+    seven, eight = store.card(7), store.card(8)
+    assert seven is not None and seven.state is State.CAN_CLOSE_ISSUE
+    assert eight is not None and eight.state is State.NEEDS_TRIAGE
+
+    await poller.poll_sessions()
+    assert devin.gets == 2  # still being polled: #8's verdict may yet arrive
+
+
+async def test_an_eligible_verdict_goes_to_a_worker_not_a_human_by_default() -> None:
+    """The analyst's eligibility call is the gate; confidence only informs it."""
+    store, github = store_with_issue(), FakeGitHub()
+    await dispatcher_for(store, github).apply_verdict(
+        verdict(eligible=True, tier="hard", decline_reason="none", confidence=0.55)
+    )
+    card = store.card(7)
+    assert card is not None and card.state is State.DEVIN_ELIGIBLE
+
+
+async def test_raising_the_threshold_puts_a_hesitant_verdict_in_front_of_a_human() -> None:
+    store, github = store_with_issue(), FakeGitHub()
+    dispatcher = dispatcher_for(store, github)
+    dispatcher.settings = Settings(replay=True, confidence_threshold=0.6)
+    await dispatcher.apply_verdict(
+        verdict(eligible=True, tier="hard", decline_reason="none", confidence=0.55)
+    )
+    card = store.card(7)
+    assert card is not None and card.state is State.HUMAN_REVIEW
+
+
 async def test_an_automation_session_is_adopted_even_if_it_is_already_paused() -> None:
     """First sight and stopped are not exclusive, and there is no second first sight."""
     store, github = store_with_issue(), FakeGitHub()
