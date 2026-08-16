@@ -155,6 +155,11 @@ class Settings(BaseSettings):
         for name, compressed in _REPLAY_CLOCK.items():
             if name not in self.model_fields_set:
                 setattr(self, name, compressed)
+        # Manual triage is the right live default — the ACUs are real there.
+        # Here they are not, and a board that waits to be clicked is not the
+        # run the README promises.
+        if "triage_mode" not in self.model_fields_set:
+            self.triage_mode = TriageMode.AUTO
         return self
 
     @property
