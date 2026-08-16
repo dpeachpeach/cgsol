@@ -14,6 +14,10 @@ export const COLUMNS: {
   states: (State | null)[];
   intent?: "danger" | "warning" | "success" | "primary";
   accent: string;
+  /** Starts as a rail. For a column that is only ever read deliberately: the
+   *  declines are the majority of any real backlog and none of them is a thing
+   *  to do, so they earn a count and nothing else until asked for. */
+  collapsed?: boolean;
 }[] = [
   {
     key: "backlog",
@@ -31,7 +35,7 @@ export const COLUMNS: {
   {
     key: "human",
     label: "Request human",
-    states: ["human-review", "devin-blocked", "devin-declined"],
+    states: ["human-review", "devin-blocked"],
     intent: "warning",
     accent: Colors.GOLD2,
   },
@@ -41,6 +45,13 @@ export const COLUMNS: {
     states: ["can-close-issue", "done"],
     intent: "success",
     accent: Colors.GREEN2,
+  },
+  {
+    key: "declined",
+    label: "Declined",
+    states: ["devin-declined"],
+    accent: Colors.GRAY3,
+    collapsed: true,
   },
 ];
 
@@ -256,10 +267,18 @@ export function Board({
   onSelect: (n: number) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const visible =
     selected.size === 0
       ? cards
       : cards.filter((card) => selected.has(statusKey(card)));
+
+  const toggle = (key: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
 
   return (
     <>
@@ -269,21 +288,39 @@ export function Board({
           const items = visible.filter(
             (card) => columnKey(card) === column.key,
           );
+          // Filtering on a status is asking for it explicitly, so a chip that
+          // selects declines opens the rail rather than hiding the answer.
+          const open =
+            !column.collapsed ||
+            expanded.has(column.key) ||
+            column.states.some(
+              (state) => state !== null && selected.has(state),
+            );
           return (
             <div
-              className="column"
+              className={open ? "column" : "column column--rail"}
               key={column.key}
               style={{ "--accent": column.accent } as CSSProperties}
             >
-              <div className="column__head">
-                <span>{column.label}</span>
+              <div
+                className="column__head"
+                onClick={column.collapsed ? () => toggle(column.key) : undefined}
+                style={column.collapsed ? { cursor: "pointer" } : undefined}
+              >
+                <span>
+                  {column.collapsed && (
+                    <Icon icon={open ? "chevron-down" : "chevron-right"} size={11} />
+                  )}{" "}
+                  {column.label}
+                </span>
                 <Tag round intent={column.intent}>
                   {items.length}
                 </Tag>
               </div>
-              {items.map((card) => (
-                <IssueTile key={card.number} card={card} onSelect={onSelect} />
-              ))}
+              {open &&
+                items.map((card) => (
+                  <IssueTile key={card.number} card={card} onSelect={onSelect} />
+                ))}
             </div>
           );
         })}

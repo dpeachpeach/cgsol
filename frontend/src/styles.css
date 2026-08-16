@@ -69,10 +69,19 @@ body {
   padding: 8px;
 }
 
+/* Collapsed: a rail wide enough for its own name and count, so the board's
+   width goes to the columns that hold work. */
+.column--rail {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .column__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
