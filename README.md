@@ -84,6 +84,14 @@ Their prompts write labels directly. Devin is a first-class writer to the state
 machine, not a subordinate reporting through this server; the poller discovers
 sessions it never dispatched (`origin: "automation"`) and adopts them.
 
+Three actors write labels, so the receiver has to tell them apart by
+`sender.login`: the human, Devin (`devin-ai-integration[bot]`) and the
+orchestrator itself. As a PAT the orchestrator wore the human's login and was
+indistinguishable from them; as an App it writes as `<app-slug>[bot]`. Both
+identities are treated as "not human intent" — they do not count as human turns
+against the autonomy metric — but our own writes still start triage, because
+`make seed` files the backlog under exactly that identity.
+
 ## Running it
 
 ### Replay (default — no credentials)
@@ -100,10 +108,42 @@ replay worth having as a test.
 ### Live
 
 ```bash
-cp .env.example .env    # GITHUB_TOKEN, DEVIN_API_KEY, DEVIN_ORG_ID, SMEE_URL
+cp .env.example .env    # DEVIN_API_KEY, DEVIN_ORG_ID
+make github-app         # creates the GitHub App: identity, webhook, secret, key
 make bootstrap          # push playbooks + knowledge notes, write their IDs back to .env
 make live               # includes the smee tunnel, so nothing to install locally
 ```
+
+#### The GitHub credential
+
+`make github-app` mints a smee channel, serves a page that POSTs a [GitHub App
+manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest),
+exchanges the code GitHub redirects back with for the app's id, private key and
+webhook secret, writes all of it to `.env`, and then waits for the app to be
+installed on the fork so it can record the installation id.
+
+The app is the identity *and* the webhook *and* the webhook secret, which is why
+this replaces three manual acts with one command: no PAT minted in a settings
+page, no webhook created by hand, no secret copied between two browser tabs. At
+runtime the orchestrator signs a 10-minute RS256 JWT with the private key and
+trades it for an installation token that lives an hour and is refreshed before it
+expires — so the standing, never-expiring credential is gone.
+
+**Two clicks remain, and cannot be automated away:**
+
+1. **Create GitHub App** — on the page the manifest is posted to. GitHub requires
+   a human account to own an app.
+2. **Install** — on the app's install page, granting it the fork. GitHub requires
+   the repository owner to consent.
+
+Everything on either side of those two clicks is scripted. If nobody clicks the
+second one, the installation poll gives up after ten minutes and tells you the
+id to paste in; the app itself is already created and its credentials are already
+in `.env`.
+
+`GITHUB_TOKEN` still works and is still the fallback: with no app configured the
+client authenticates with the PAT exactly as before, which is what keeps replay
+and any half-migrated setup running.
 
 `DEVIN_API_KEY` has to belong to a service user with the org-level
 `UseDevinSessions` permission: playbooks, knowledge, dispatch and polling all run
