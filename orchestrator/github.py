@@ -79,6 +79,7 @@ class GitHubClient:
         self._etags: dict[str, tuple[str, bytes]] = {}
         self._remaining: int | None = None
         self._resets_at: float = 0.0
+        self._last_read: float = 0.0
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -102,6 +103,8 @@ class GitHubClient:
         if self._resets_at > time.time() and (budget <= 0 or (read and budget <= WRITE_RESERVE)):
             raise RateLimited(self._resets_at)
 
+        if read:
+            await self._pace()
         headers = dict(kwargs.pop("headers", None) or {})
         if self._tokens is not None:
             headers["Authorization"] = f"Bearer {await self._tokens.token()}"
@@ -128,6 +131,23 @@ class GitHubClient:
             self._etags[key] = (etag, response.content)
         return response
 
+    async def _pace(self) -> None:
+        """Spend what is left evenly over what is left of the hour.
+
+        Self-tuning rather than a fixed ceiling: with a full budget the spacing
+        is under a second and polling is unaffected, and it only starts to bite
+        once the burn rate would not survive the window. A poll interval can
+        then be tuned for latency without being a way to exhaust the budget.
+        """
+        window = self._resets_at - time.time()
+        if self._remaining is None or window <= 0:
+            return
+        spendable = max(1, self._remaining - WRITE_RESERVE)
+        gap = (self._last_read + window / spendable) - time.time()
+        if gap > 0:
+            await asyncio.sleep(min(gap, window))
+        self._last_read = time.time()
+
     def _note_limits(self, response: httpx.Response) -> None:
         remaining = response.headers.get("x-ratelimit-remaining")
         reset = response.headers.get("x-ratelimit-reset")
@@ -146,14 +166,22 @@ class GitHubClient:
 
     # --- reads ----------------------------------------------------------------
 
-    async def list_issues(self, state: str = "open", limit: int = 100) -> list[Issue]:
+    async def list_issues(
+        self, state: str = "open", limit: int = 100, since: str | None = None
+    ) -> list[Issue]:
+        """`since` is an ISO-8601 timestamp: only issues touched after it.
+
+        The cheap sweep. A repo of 30 issues costs 30 issues' worth of payload
+        every time it is read in full, and almost none of them moved.
+        """
         issues: list[Issue] = []
         page = 1
         while len(issues) < limit:
+            params: dict[str, Any] = {"state": state, "per_page": min(100, limit), "page": page}
+            if since is not None:
+                params["since"] = since
             response = await self._request(
-                "GET",
-                f"/repos/{self._repo}/issues",
-                params={"state": state, "per_page": min(100, limit), "page": page},
+                "GET", f"/repos/{self._repo}/issues", params=params
             )
             response.raise_for_status()
             batch = response.json()
