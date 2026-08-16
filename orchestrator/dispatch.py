@@ -440,14 +440,17 @@ class Dispatcher:
         )
 
     async def escalate(self, card: IssueCard, reason: str, target: State) -> None:
-        card.meta.escalation = reason
-        self.metrics.record_escalation(reason)
         try:
             label = EscalationReason(reason).label
         except ValueError:
             label = EscalationReason.SESSION_ERROR.label
         await self._move(card, target)
+        # The label goes on before the flag, because a sweep landing in between
+        # reads the escalation off the labels: the other order would let it see
+        # a card escalated in memory but not on GitHub, and undo it.
         await self.github.add_labels(card.number, [label])
+        card.meta.escalation = reason
+        self.metrics.record_escalation(reason)
         await self.github.upsert_meta(
             card.number,
             card.meta,

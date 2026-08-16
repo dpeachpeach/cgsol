@@ -160,5 +160,17 @@ class EscalationReason(str, Enum):
         return f"escalation:{self.value}"
 
 
+ESCALATION_PREFIX = "escalation:"
+
+
+def escalation_of(labels: list[str]) -> str | None:
+    """What the labels say the escalation is, which is what a maintainer editing
+    them in the GitHub UI expects to be true."""
+    for label in labels:
+        if label.startswith(ESCALATION_PREFIX):
+            return label.removeprefix(ESCALATION_PREFIX)
+    return None
+
+
 #: Colours and descriptions live in seed/labels.yaml, next to the corpus that
 #: needs them; see `orchestrator.resources.load_label_definitions`.

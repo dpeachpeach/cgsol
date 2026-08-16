@@ -14,7 +14,7 @@ from orchestrator.config import Settings, TriageMode, get_settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient, RateLimited
-from orchestrator.labels import State
+from orchestrator.labels import State, escalation_of
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import TriageEstimate
 from orchestrator.poller import Poller
@@ -108,6 +108,8 @@ class Orchestrator:
                 if from_human:
                     self._count_human_turn(number)
                 await self._refresh_issue(number)
+                if from_human:
+                    await self._adopt_label_edit(number)
                 return "refreshed"
             if action == "closed":
                 await self._refresh_issue(number)
@@ -171,6 +173,35 @@ class Orchestrator:
         card = self.store.card(number)
         if card is not None and card.meta.session_id:
             card.meta.human_turns += 1
+
+    async def _adopt_label_edit(self, number: int) -> None:
+        """Take a maintainer's label edit literally.
+
+        The state label is already authoritative — the projection reads it. The
+        escalation was not: it lived only in the metadata comment, so pulling
+        `escalation:ci-unfixable` off an issue cleared the tag on the board while
+        the dispatcher went on refusing to touch it. A label a human can remove
+        and an agent then ignores is worse than no label at all.
+        """
+        card = self.store.card(number)
+        if card is None:
+            return
+        labelled = escalation_of(card.labels)
+        if labelled == card.meta.escalation:
+            return
+        was = card.meta.escalation
+        card.meta.escalation = labelled
+        note = (
+            f"**Escalation cleared by a human** — was `{was}`. Back in the pipeline."
+            if labelled is None
+            else f"**Escalated by a human** — `{labelled}`."
+        )
+        await self.github.upsert_meta(number, card.meta, note)
+        log.info("escalation adopted from labels: issue=%d %s -> %s", number, was, labelled)
+        await self.store.publish(
+            "issue.escalated", {"issue": number, "reason": labelled, "by": "human"}
+        )
+        await self.store.publish("issue.updated", card.model_dump(mode="json"))
 
     async def _refresh_issue(self, number: int) -> None:
         issue = await self.github.get_issue(number)

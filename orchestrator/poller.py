@@ -30,7 +30,7 @@ from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient, RateLimited
-from orchestrator.labels import READY_TO_MERGE_LABEL, TERMINAL_STATES, State
+from orchestrator.labels import READY_TO_MERGE_LABEL, TERMINAL_STATES, State, escalation_of
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import IssueCard, IssueMeta, SessionInfo, Verdict
 from orchestrator.state import Store
@@ -299,6 +299,11 @@ class Poller:
                 found = await self.github.find_meta_comment(issue.number)
                 meta = found[1] if found else IssueMeta()
             card = self.store.upsert_issue(issue, meta)
+            # Labels win over the metadata comment, so a maintainer who takes
+            # `escalation:*` off in the GitHub UI is obeyed even if that webhook
+            # never arrived. Projection only — the comment is rewritten on the
+            # event, and rewriting it here would spend a write per sweep.
+            card.meta.escalation = escalation_of(issue.labels)
             # A close is only this pipeline's outcome if this pipeline was
             # working the issue. Closing something it never touched is a
             # maintainer clearing their own backlog, and closing something
