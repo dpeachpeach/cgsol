@@ -123,6 +123,7 @@ class SimulatedWorld:
                     # Replay starts where the real fork starts: unlabelled.
                     # Everything the dashboard shows is produced by this run.
                     "labels": [],
+                    "created_at": raw.get("created_at", ""),
                     "updated_at": raw.get("updated_at", ""),
                 }
         if CORPUS_PATH.exists():
@@ -285,6 +286,7 @@ class SimulatedWorld:
             "body": f"Closes #{number}\n\nAutomated fix.",
             "html_url": f"https://github.com/dpeachpeach/superset-cg/pull/{self._next_pr}",
             "state": "open",
+            "created_at": _now_iso(),
             "merged_at": None,
             "head": {"ref": f"devin/issue-{number}-{_slug(issue['title'])}", "sha": sha},
         }
@@ -500,6 +502,7 @@ def _issue_json(issue: dict[str, Any]) -> dict[str, Any]:
         "labels": [{"name": name} for name in issue["labels"]],
         "state": issue["state"],
         "html_url": issue["html_url"],
+        "created_at": issue.get("created_at", ""),
         "updated_at": issue["updated_at"],
     }
 

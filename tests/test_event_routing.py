@@ -13,6 +13,7 @@ from typing import Any
 from orchestrator.config import Settings, TriageMode
 from orchestrator.labels import State
 from orchestrator.service import Orchestrator
+from orchestrator.state import Store
 from orchestrator.webhooks import Debouncer
 
 APP_LOGIN = "cgsol-orchestrator[bot]"
@@ -32,6 +33,7 @@ class Harness:
         service.settings = Settings(
             replay=True, github_app_slug=app_slug, triage_mode=TriageMode.AUTO
         )
+        service.store = Store()
         service.debouncer = Debouncer(60, self._flush)
         service._count_human_turn = self.human_turns.append  # type: ignore[method-assign]
         service._refresh_issue = self._refresh  # type: ignore[method-assign]

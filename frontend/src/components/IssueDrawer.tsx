@@ -88,6 +88,16 @@ export function IssueDrawer({
             </ButtonGroup>
           </div>
 
+          {card.progress_phase && (
+            <div className="drawer__section">
+              <div className="metric__label">Worker progress</div>
+              <p className="mono">
+                {card.progress_phase}
+                {card.progress_message ? ` — ${card.progress_message}` : ""}
+              </p>
+            </div>
+          )}
+
           <div className="drawer__section">
             <div className="metric__label">Scout verdict</div>
             {card.meta.scout_reasoning ? (
@@ -96,7 +106,6 @@ export function IssueDrawer({
                 {card.meta.suggested_approach && (
                   <p className="mono">Approach: {card.meta.suggested_approach}</p>
                 )}
-                <Tag minimal>confidence {card.meta.confidence?.toFixed(2) ?? "—"}</Tag>{" "}
                 <Tag minimal>{card.meta.tier ?? "untierd"}</Tag>
               </>
             ) : (

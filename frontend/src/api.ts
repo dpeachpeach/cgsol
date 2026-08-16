@@ -46,6 +46,7 @@ export function subscribe(onEvent: (event: StreamEvent) => void): () => void {
     "scout.dispatched",
     "scout.finished",
     "worker.dispatched",
+    "worker.progress",
     "session.adopted",
     "config.reloaded",
   ];

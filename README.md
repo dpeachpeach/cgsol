@@ -35,6 +35,13 @@ which makes it the cheapest thing the pipeline produces. Triage only reaches it
 with evidence — the file it read and what that file contains now — and a human
 still does the closing.
 
+One label sits outside the state machine: `ready-to-merge`, written on the
+**pull request** once its checks are green and the card carries no escalation
+other than low confidence. It is not a state — the issue stays `human-review`
+until a person merges — and it is derived from the checks the orchestrator read,
+not from the worker's sign-off comment, which is a claim rather than a verdict.
+It comes off again if CI later goes red.
+
 ## Triage cadence
 
 When an untriaged issue becomes a scout session is a spend decision, so it is a
@@ -75,6 +82,25 @@ in the metrics panel is there to answer.
 CI autofix is capped at three rounds. A fourth would be an infinite loop with a
 budget attached, so round three escalates to `human-review` with
 `escalation:ci-unfixable` and the count is kept.
+
+### Workers report in
+
+A worker posts one comment on its issue when it starts implementing:
+
+```text
+CGSOL_PROGRESS: drafting-pr Preparing the smallest viable fix.
+```
+
+The board shows `drafting PR · 2m ago` from that, and it is the cheapest signal
+in the system: Devin's integration writes it on Devin's quota, GitHub delivers it
+as a webhook, and the handler projects it straight out of the payload — no issue
+read, no PR read, no check read. A progress event that provoked a refetch would
+cost more than the polling it replaced, so the tests assert the absence of those
+calls rather than trusting the handler to stay honest.
+
+It says what a worker is doing, never what is true: the PR comes from PR
+adoption, green comes from checks, and an unrecognised phase is dropped rather
+than rendered.
 
 ## Cost containment
 
@@ -123,7 +149,7 @@ Three actors write labels, so the receiver has to tell them apart by
 orchestrator itself. As a PAT the orchestrator wore the human's login and was
 indistinguishable from them; as an App it writes as `<app-slug>[bot]`. Both
 identities are treated as "not human intent" — they do not count as human turns
-against the autonomy metric — but our own writes still start triage, because
+on the card — but our own writes still start triage, because
 `make seed` files the backlog under exactly that identity.
 
 ## Running it
@@ -203,10 +229,13 @@ make check       # ruff, mypy, pytest, tsc, eslint
 Status is not effectiveness. The board is status; the metrics tab answers "how
 would I know this is working":
 
-- **autonomy rate** — merged PRs that needed zero human turns
-- **ACU per merged PR**, trended
-- **CI rounds to green** — first-pass quality, and the number that should fall as
-  the playbooks get tuned
+- **ACU per ready-to-merge PR** — every ACU the pipeline spent, including triage
+  and the issues it declined, over the PRs whose CI is green. Cost per outcome
+  rather than cost per attempt, which is the number to hold against engineer-hours
+- **average age of open issues**, measured from when the bug was first reported
+  upstream — the import footer's date, not when the issue was copied onto this
+  fork, which would report hours on a backlog that is months old
+- **issue → PR** — how long a worker takes, on this fork's clock
 - funnel from ingested to merged, and spend-by-tier next to merge-rate-by-tier: if
   hard tier burns 60% of the budget for a 30% merge rate, that is a finding
 - escalation taxonomy, which is the input to the next round of knowledge notes

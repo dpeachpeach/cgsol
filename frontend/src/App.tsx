@@ -20,6 +20,11 @@ import type { IssueCard, Metrics, RateBudget, Snapshot } from "./types";
 
 type View = "board" | "metrics";
 
+/** Metrics are derived from the projection, not polled from GitHub, so a
+ *  refresh costs nothing on the API budget. A minute is slow enough to read a
+ *  number before it changes and fast enough that a demo never shows a stale one. */
+const METRICS_INTERVAL_MS = 60_000;
+
 /** The hourly REST budget. An hour about to run out should be visible before
  * the board stops moving, not afterwards. */
 function BudgetTag({ budget }: { budget: RateBudget }) {
@@ -49,6 +54,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [triageOpen, setTriageOpen] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [metricsAt, setMetricsAt] = useState<number | null>(null);
   const inflight = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -58,6 +64,7 @@ export function App() {
       const [state, computed] = await Promise.all([api.state(), api.metrics()]);
       setSnapshot(state);
       setMetrics(computed);
+      setMetricsAt(Date.now());
     } finally {
       inflight.current = false;
     }
@@ -77,6 +84,16 @@ export function App() {
     });
     return close;
   }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void api.metrics().then((computed) => {
+        setMetrics(computed);
+        setMetricsAt(Date.now());
+      });
+    }, METRICS_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const onCardChanged = useCallback((card: IssueCard) => {
     setSnapshot((current) =>
@@ -147,7 +164,7 @@ export function App() {
         ) : view === "board" ? (
           <Board cards={snapshot.cards} onSelect={setSelected} />
         ) : (
-          <MetricsPanel metrics={metrics} />
+          <MetricsPanel metrics={metrics} computedAt={metricsAt} />
         )}
       </div>
 

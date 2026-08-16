@@ -124,8 +124,11 @@ class GitHubClient:
         return time.time() + self._clock_skew
 
     @staticmethod
-    def _cache_key(path: str, params: Any) -> str:
-        return f"{path}?{sorted((params or {}).items())}"
+    def _cache_key(path: str, params: Any, accept: str | None) -> str:
+        # The same contents URL answers with JSON metadata or with the raw file
+        # depending on Accept, so the representation belongs in the key: replay a
+        # cached 304 under the wrong one and the caller parses YAML as JSON.
+        return f"{accept or ''} {path}?{sorted((params or {}).items())}"
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         read = method.upper() == "GET"
@@ -138,7 +141,7 @@ class GitHubClient:
         headers = dict(kwargs.pop("headers", None) or {})
         if self._tokens is not None:
             headers["Authorization"] = f"Bearer {await self._tokens.token()}"
-        key = self._cache_key(path, kwargs.get("params"))
+        key = self._cache_key(path, kwargs.get("params"), headers.get("Accept"))
         cached = self._etags.get(key) if read else None
         if cached is not None:
             headers["If-None-Match"] = cached[0]
@@ -397,13 +400,26 @@ class GitHubClient:
         return int(response.json()["number"])
 
 
+#: The footer `seed/sanitize.py` writes on every imported issue:
+#: `_Imported from apache/superset issue 36406. Originally filed 2025-12-03._`
+_FILED_RE = re.compile(r"Originally filed (\d{4}-\d{2}-\d{2})")
+
+
+def _filed_at(body: str) -> str:
+    match = _FILED_RE.search(body)
+    return f"{match.group(1)}T00:00:00Z" if match else ""
+
+
 def _to_issue(raw: dict[str, Any]) -> Issue:
+    body = raw.get("body") or ""
     return Issue(
         number=raw["number"],
         title=raw.get("title", ""),
-        body=raw.get("body") or "",
+        body=body,
         labels=[label["name"] for label in raw.get("labels", [])],
         state=raw.get("state", "open"),
         html_url=raw.get("html_url", ""),
+        created_at=raw.get("created_at", ""),
+        filed_at=_filed_at(body),
         updated_at=raw.get("updated_at", ""),
     )

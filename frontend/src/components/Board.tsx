@@ -1,68 +1,111 @@
-import { Card, Colors, Icon, Tag } from "@blueprintjs/core";
-import type { CSSProperties } from "react";
+import { Button, Card, Colors, Icon, Tag } from "@blueprintjs/core";
+import { type CSSProperties, useState } from "react";
 
 import type { IssueCard, State } from "../types";
 
-/** The autofix loop is a story worth showing, so ci-failing and devin-fixing
- *  are first-class columns rather than a badge on devin-pr-open. */
+/** Four columns, eleven labels: the label set is the state machine and stays
+ *  as it is on GitHub, but a column per label spends the width of the board on
+ *  transitions that are empty whenever nothing is mid-flight. Each card still
+ *  carries its own label, so `ci-failing` is legible without a column of its
+ *  own. */
 export const COLUMNS: {
-  state: State;
+  key: string;
   label: string;
+  states: (State | null)[];
   intent?: "danger" | "warning" | "success" | "primary";
   accent: string;
+  /** Starts as a rail. For a column that is only ever read deliberately: the
+   *  declines are the majority of any real backlog and none of them is a thing
+   *  to do, so they earn a count and nothing else until asked for. */
+  collapsed?: boolean;
 }[] = [
-  { state: "needs-triage", label: "Needs triage", accent: Colors.GRAY1 },
   {
-    state: "devin-eligible",
-    label: "Eligible",
-    intent: "primary",
-    accent: Colors.BLUE2,
+    key: "backlog",
+    label: "Backlog",
+    states: [null, "needs-triage"],
+    accent: Colors.GRAY1,
   },
   {
-    state: "devin-working",
-    label: "Working",
+    key: "working",
+    label: "Devin working",
+    // `devin-eligible` sits here rather than in the backlog: triage is done
+    // with it, and what a maintainer wants to see is the whole post-triage
+    // pipeline in one column, including the part waiting on capacity.
+    states: [
+      "devin-eligible",
+      "devin-working",
+      "devin-pr-open",
+      "ci-failing",
+      "devin-fixing",
+    ],
     intent: "primary",
     accent: Colors.INDIGO2,
   },
   {
-    state: "devin-pr-open",
-    label: "PR open",
-    intent: "primary",
-    accent: Colors.CERULEAN2,
-  },
-  {
-    state: "ci-failing",
-    label: "CI failing",
-    intent: "danger",
-    accent: Colors.RED2,
-  },
-  {
-    state: "devin-fixing",
-    label: "Devin fixing",
-    intent: "warning",
-    accent: Colors.ORANGE2,
-  },
-  {
-    state: "human-review",
-    label: "Human review",
+    key: "human",
+    label: "Request human",
+    states: ["human-review", "devin-blocked"],
     intent: "warning",
     accent: Colors.GOLD2,
   },
-  { state: "done", label: "Done", intent: "success", accent: Colors.GREEN2 },
   {
-    state: "can-close-issue",
-    label: "Can close",
+    key: "ready",
+    label: "Ready to close / merge",
+    states: ["can-close-issue", "done"],
     intent: "success",
-    accent: Colors.FOREST2,
+    accent: Colors.GREEN2,
   },
-  { state: "devin-declined", label: "Declined", accent: Colors.GRAY2 },
   {
-    state: "devin-blocked",
-    label: "Blocked",
-    intent: "danger",
-    accent: Colors.VERMILION2,
+    key: "declined",
+    label: "Declined",
+    states: ["devin-declined"],
+    accent: Colors.GRAY3,
+    collapsed: true,
   },
 ];
+
+const CONFIDENT = 0.3;
+
+/** `human-review` covers two unlike things: work that finished and wants a
+ *  merge, and work the pipeline refused to trust. Only the second is a request
+ *  for a person, so a confident card is filed as ready rather than pending. An
+ *  escalation of any other kind (ci-unfixable, ambiguous-requirement) always
+ *  wants the human, however confident the analyst was. */
+function columnKey(card: IssueCard): string {
+  if (card.state !== "human-review") {
+    return (
+      COLUMNS.find((column) => column.states.includes(card.state))?.key ?? ""
+    );
+  }
+  const escalation = card.meta.escalation;
+  if (escalation && escalation !== "low-confidence") return "human";
+  const confidence = card.meta.confidence;
+  return confidence === null || confidence >= CONFIDENT ? "ready" : "human";
+}
+
+const STATE_LABEL: Record<string, string> = {
+  "needs-triage": "needs triage",
+  "devin-eligible": "eligible",
+  "devin-working": "working",
+  "devin-pr-open": "PR open",
+  "ci-failing": "CI failing",
+  "devin-fixing": "Devin fixing",
+  "human-review": "human review",
+  "devin-declined": "declined",
+  "devin-blocked": "blocked",
+  "can-close-issue": "can close",
+  done: "done",
+};
+
+const STATE_INTENT: Record<string, "danger" | "warning" | "success" | "primary"> =
+  {
+    "devin-pr-open": "primary",
+    "ci-failing": "danger",
+    "devin-fixing": "warning",
+    "devin-blocked": "danger",
+    done: "success",
+    "can-close-issue": "success",
+  };
 
 const TIER_INTENT: Record<string, "success" | "warning" | "danger"> = {
   "tier:trivial": "success",
@@ -75,6 +118,79 @@ function since(ts: number): string {
   const seconds = Math.max(0, Math.round(Date.now() / 1000 - ts));
   if (seconds < 60) return `${seconds}s ago`;
   return `${Math.round(seconds / 60)}m ago`;
+}
+
+function sinceStamp(stamp: string | null): string {
+  if (!stamp) return "just now";
+  const at = Date.parse(stamp);
+  return Number.isNaN(at) ? "just now" : since(at / 1000);
+}
+
+const PROGRESS_LABEL: Record<string, string> = {
+  "drafting-pr": "drafting PR",
+  "pr-opened": "PR opened",
+};
+
+const UNLABELLED = "unlabelled";
+
+function statusKey(card: IssueCard): string {
+  return card.state ?? UNLABELLED;
+}
+
+/** Filters on the GitHub status, not on the column: the columns are a grouping
+ *  of eleven labels, and the label is the thing a maintainer actually asks
+ *  about ("show me what CI is failing on"). Nothing selected means everything. */
+function BoardFilters({
+  cards,
+  selected,
+  onChange,
+}: {
+  cards: IssueCard[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const counts = new Map<string, number>();
+  for (const card of cards) {
+    const key = statusKey(card);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const order = [UNLABELLED, ...COLUMNS.flatMap((c) => c.states)].filter(
+    (key): key is string => key !== null,
+  );
+  const present = order.filter((key) => counts.has(key));
+
+  const toggle = (key: string) => {
+    const next = new Set(selected);
+    if (!next.delete(key)) next.add(key);
+    onChange(next);
+  };
+
+  return (
+    <div className="board__filters">
+      <span className="bp5-text-muted">Status</span>
+      {present.map((key) => (
+        <Tag
+          key={key}
+          round
+          interactive
+          minimal={!selected.has(key)}
+          intent={selected.has(key) ? "primary" : undefined}
+          onClick={() => toggle(key)}
+        >
+          {(STATE_LABEL[key] ?? key)} {counts.get(key)}
+        </Tag>
+      ))}
+      {selected.size > 0 && (
+        <Button
+          minimal
+          small
+          icon="cross"
+          text="Clear"
+          onClick={() => onChange(new Set())}
+        />
+      )}
+    </div>
+  );
 }
 
 function IssueTile({
@@ -96,19 +212,39 @@ function IssueTile({
         <strong>#{card.number}</strong> {card.title}
       </div>
       <div className="card__meta">
+        {card.pickup_status === "awaiting-devin" ? (
+          <Tag round minimal intent="warning" icon="time">
+            awaiting Devin pickup
+          </Tag>
+        ) : (
+          card.state && (
+            <Tag round minimal intent={STATE_INTENT[card.state]}>
+              {STATE_LABEL[card.state] ?? card.state}
+            </Tag>
+          )
+        )}
         {card.tier && (
           <Tag round intent={TIER_INTENT[card.tier]}>
             {card.tier.replace("tier:", "")}
           </Tag>
         )}
-        {card.meta.confidence !== null && (
-          <Tag round minimal>
-            conf {card.meta.confidence.toFixed(2)}
-          </Tag>
-        )}
         {card.meta.acus > 0 && (
           <Tag round minimal icon="dollar">
             {card.meta.acus.toFixed(2)} ACU
+          </Tag>
+        )}
+        {/* Narration, and only until GitHub can speak for itself: once the PR
+            exists the card has a real state to show and the worker's account of
+            what it was doing is no longer the most interesting thing on it. */}
+        {card.progress_phase && !card.meta.pr_url && columnKey(card) === "working" && (
+          <Tag round intent="primary" icon="build">
+            {PROGRESS_LABEL[card.progress_phase] ?? card.progress_phase} ·{" "}
+            {sinceStamp(card.progress_at)}
+          </Tag>
+        )}
+        {card.ready_to_merge && (
+          <Tag round intent="success" icon="git-merge">
+            ready to merge
           </Tag>
         )}
         {card.meta.ci_rounds > 0 && (
@@ -121,7 +257,7 @@ function IssueTile({
             {failing.length} red
           </Tag>
         )}
-        {card.meta.escalation && (
+        {card.meta.escalation && columnKey(card) === "human" && (
           <Tag round intent="danger">
             {card.meta.escalation}
           </Tag>
@@ -145,43 +281,65 @@ export function Board({
   cards: IssueCard[];
   onSelect: (n: number) => void;
 }) {
-  const untriaged = cards.filter((card) => card.state === null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const visible =
+    selected.size === 0
+      ? cards
+      : cards.filter((card) => selected.has(statusKey(card)));
+
+  const toggle = (key: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
   return (
-    <div className="board">
-      {untriaged.length > 0 && (
-        <div
-          className="column"
-          style={{ "--accent": Colors.GRAY1 } as CSSProperties}
-        >
-          <div className="column__head">
-            <span>Unlabelled</span>
-            <Tag round>{untriaged.length}</Tag>
-          </div>
-          {untriaged.map((card) => (
-            <IssueTile key={card.number} card={card} onSelect={onSelect} />
-          ))}
-        </div>
-      )}
-      {COLUMNS.map((column) => {
-        const items = cards.filter((card) => card.state === column.state);
-        return (
-          <div
-            className="column"
-            key={column.state}
-            style={{ "--accent": column.accent } as CSSProperties}
-          >
-            <div className="column__head">
-              <span>{column.label}</span>
-              <Tag round intent={column.intent}>
-                {items.length}
-              </Tag>
+    <>
+      <BoardFilters cards={cards} selected={selected} onChange={setSelected} />
+      <div className="board">
+        {COLUMNS.map((column) => {
+          const items = visible.filter(
+            (card) => columnKey(card) === column.key,
+          );
+          // Filtering on a status is asking for it explicitly, so a chip that
+          // selects declines opens the rail rather than hiding the answer.
+          const open =
+            !column.collapsed ||
+            expanded.has(column.key) ||
+            column.states.some(
+              (state) => state !== null && selected.has(state),
+            );
+          return (
+            <div
+              className={open ? "column" : "column column--rail"}
+              key={column.key}
+              style={{ "--accent": column.accent } as CSSProperties}
+            >
+              <div
+                className="column__head"
+                onClick={column.collapsed ? () => toggle(column.key) : undefined}
+                style={column.collapsed ? { cursor: "pointer" } : undefined}
+              >
+                <span>
+                  {column.collapsed && (
+                    <Icon icon={open ? "chevron-down" : "chevron-right"} size={11} />
+                  )}{" "}
+                  {column.label}
+                </span>
+                <Tag round intent={column.intent}>
+                  {items.length}
+                </Tag>
+              </div>
+              {open &&
+                items.map((card) => (
+                  <IssueTile key={card.number} card={card} onSelect={onSelect} />
+                ))}
             </div>
-            {items.map((card) => (
-              <IssueTile key={card.number} card={card} onSelect={onSelect} />
-            ))}
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }

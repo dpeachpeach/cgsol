@@ -14,13 +14,13 @@ from orchestrator.config import Settings, TriageMode, get_settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient, RateLimited
-from orchestrator.labels import State
+from orchestrator.labels import State, escalation_of
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import TriageEstimate
 from orchestrator.poller import Poller
 from orchestrator.resources import load_resources
 from orchestrator.state import Store
-from orchestrator.webhooks import Debouncer, DeliveryDedup, classify_sender
+from orchestrator.webhooks import Debouncer, DeliveryDedup, classify_sender, parse_progress
 
 log = logging.getLogger("cgsol.service")
 
@@ -108,17 +108,48 @@ class Orchestrator:
                 if from_human:
                     self._count_human_turn(number)
                 await self._refresh_issue(number)
+                if from_human:
+                    await self._adopt_label_edit(number)
                 return "refreshed"
             if action == "closed":
                 await self._refresh_issue(number)
                 return "refreshed"
             return "ignored"
 
-        if event == "issue_comment" and from_human:
-            number = (payload.get("issue") or {}).get("number")
-            if number is not None:
-                self._count_human_turn(number)
-            return "noted"
+        if event == "issue_comment":
+            # A worker's own progress report is the one thing a bot tells us
+            # that we did not already write ourselves, and the whole point is
+            # that it is free: everything the card needs is in this payload, so
+            # nothing below this line asks GitHub anything.
+            if from_bot and (progress := parse_progress(payload)) is not None:
+                card = self.store.card(progress.issue)
+                if card is None or card.progress_comment_id == progress.comment_id:
+                    return "ignored"
+                card.progress_phase = progress.phase
+                card.progress_message = progress.message or None
+                card.progress_at = progress.at
+                card.progress_comment_id = progress.comment_id
+                log.info(
+                    "worker progress received: issue=%d phase=%s source=webhook",
+                    progress.issue,
+                    progress.phase,
+                )
+                await self.store.publish(
+                    "worker.progress",
+                    {
+                        "issue": progress.issue,
+                        "phase": progress.phase,
+                        "message": progress.message,
+                        "at": progress.at,
+                    },
+                )
+                return "progress"
+            if from_human:
+                number = (payload.get("issue") or {}).get("number")
+                if number is not None:
+                    self._count_human_turn(number)
+                return "noted"
+            return "ignored"
 
         if event in {"check_run", "check_suite", "pull_request", "status", "workflow_run"}:
             # CI moved. The reconciler owns the evaluation; poke it early rather
@@ -142,6 +173,35 @@ class Orchestrator:
         card = self.store.card(number)
         if card is not None and card.meta.session_id:
             card.meta.human_turns += 1
+
+    async def _adopt_label_edit(self, number: int) -> None:
+        """Take a maintainer's label edit literally.
+
+        The state label is already authoritative — the projection reads it. The
+        escalation was not: it lived only in the metadata comment, so pulling
+        `escalation:ci-unfixable` off an issue cleared the tag on the board while
+        the dispatcher went on refusing to touch it. A label a human can remove
+        and an agent then ignores is worse than no label at all.
+        """
+        card = self.store.card(number)
+        if card is None:
+            return
+        labelled = escalation_of(card.labels)
+        if labelled == card.meta.escalation:
+            return
+        was = card.meta.escalation
+        card.meta.escalation = labelled
+        note = (
+            f"**Escalation cleared by a human** — was `{was}`. Back in the pipeline."
+            if labelled is None
+            else f"**Escalated by a human** — `{labelled}`."
+        )
+        await self.github.upsert_meta(number, card.meta, note)
+        log.info("escalation adopted from labels: issue=%d %s -> %s", number, was, labelled)
+        await self.store.publish(
+            "issue.escalated", {"issue": number, "reason": labelled, "by": "human"}
+        )
+        await self.store.publish("issue.updated", card.model_dump(mode="json"))
 
     async def _refresh_issue(self, number: int) -> None:
         issue = await self.github.get_issue(number)
@@ -214,12 +274,16 @@ class Orchestrator:
         return {"queued": [issue.number for issue in candidates]}
 
     async def load_remote_config(self) -> dict[str, Any]:
-        """Settings live in the fork, not on the orchestrator's disk. Same rule as
-        everything else: no local source of truth."""
+        """Settings the fork carries, so a restart comes back with the operator's
+        policy rather than the image's defaults."""
         raw = await self.github.get_file(CONFIG_PATH)
         if not raw:
             return {}
-        data = yaml.safe_load(raw) or {}
+        return await self.apply_config(yaml.safe_load(raw) or {})
+
+    async def apply_config(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Apply policy to the running process, whatever brought it here — the
+        repo file on boot, or the dashboard turning spending off right now."""
         # Explicitly enumerated: remote config controls policy, never credentials
         # or endpoints. A repo file that could rewrite `devin_api_base` would be
         # a write-scoped token away from being an exfiltration primitive.

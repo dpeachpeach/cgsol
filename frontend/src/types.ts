@@ -32,6 +32,7 @@ export interface IssueMeta {
   scout_reasoning: string | null;
   suggested_approach: string | null;
   acus: number;
+  pr_opened_at: string | null;
 }
 
 export interface SessionInfo {
@@ -51,14 +52,22 @@ export interface IssueCard {
   number: number;
   title: string;
   html_url: string;
+  created_at: string;
   state: State | null;
   tier: string | null;
   labels: string[];
   meta: IssueMeta;
   session: SessionInfo | null;
   checks: CheckRun[];
+  progress_phase: string | null;
+  progress_message: string | null;
+  progress_at: string | null;
+  progress_comment_id: number | null;
   pr_number: number | null;
   pr_merged: boolean;
+  ready_to_merge: boolean;
+  /** Derived from the state and the live session, never a GitHub label. */
+  pickup_status: "awaiting-devin" | null;
   last_synced: number;
   session_url?: string;
 }
@@ -82,13 +91,16 @@ export interface Snapshot {
 
 export interface Metrics {
   headline: {
-    autonomy_rate: number | null;
-    acu_per_merged_pr: number | null;
-    ci_rounds_to_green: number | null;
+    acu_per_ready_pr: number | null;
+    ready_pr_count: number;
     total_acu: number;
     build_acu: number;
     merged: number;
     retired: number;
+    issue_to_pr_seconds: number | null;
+    issue_to_pr_count: number;
+    open_age_seconds: number | null;
+    open_count: number;
   };
   funnel: Record<string, number>;
   by_tier: Record<
@@ -106,9 +118,7 @@ export interface Metrics {
   sessions: { active: number; by_role: Record<string, number> };
   series: {
     ts: number;
-    autonomy_rate: number | null;
-    acu_per_merged_pr: number | null;
-    ci_rounds_to_green: number | null;
+    acu_per_ready_pr: number | null;
     open_sessions: number;
     total_acu: number;
   }[];
