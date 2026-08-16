@@ -30,7 +30,7 @@ from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient, RateLimited
-from orchestrator.labels import TERMINAL_STATES, State
+from orchestrator.labels import READY_TO_MERGE_LABEL, TERMINAL_STATES, State
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import IssueCard, IssueMeta, SessionInfo, Verdict
 from orchestrator.state import Store
@@ -347,6 +347,11 @@ class Poller:
         card.meta.pr_url = pr["html_url"]
         card.meta.pr_opened_at = pr.get("created_at") or card.meta.pr_opened_at
         card.pr_merged = bool(pr.get("merged_at"))
+        # GitHub is authoritative for the label too, so a restart neither loses
+        # it nor writes it twice.
+        card.ready_to_merge = any(
+            label.get("name") == READY_TO_MERGE_LABEL for label in pr.get("labels") or []
+        )
         if not card.pr_merged and card.state in PRE_PR_STATES:
             await self.dispatcher.adopt_pr(card, pr)
         if not _checks_can_still_move(card, pr):
@@ -364,7 +369,13 @@ def _checks_can_still_move(card: IssueCard, pr: dict[str, Any]) -> bool:
     """Whether reading this PR's check runs can still change anything."""
     if pr.get("merged_at") or pr.get("state") not in (None, "open"):
         return False
-    return card.state not in CI_SETTLED_STATES
+    if card.state not in CI_SETTLED_STATES:
+        return True
+    # One exception to "settled states cost no reads": a `human-review` card
+    # whose checks were never read looks identical whether it is waiting on a
+    # merge or on a person to unpick red CI, and only the first is ready to
+    # merge. One read per PR settles that, and the cached answer stands after.
+    return card.state is State.HUMAN_REVIEW and not card.checks
 
 
 def _iso8601(when: float | None) -> str | None:

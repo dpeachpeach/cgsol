@@ -144,6 +144,7 @@ class IssueCard(BaseModel):
     checks: list[CheckRun] = Field(default_factory=list)
     pr_number: int | None = None
     pr_merged: bool = False
+    ready_to_merge: bool = False
     last_synced: float = 0.0
 
 

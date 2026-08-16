@@ -40,6 +40,11 @@ class Tier(str, Enum):
 
 ALL_STATE_LABELS: frozenset[str] = frozenset(state.value for state in State)
 
+#: Applied to the *pull request*, not the issue: it says something about a diff
+#: and a check run, and it is the reviewer's cue in the place they are actually
+#: looking. Not a state — the issue stays `human-review` until a human merges.
+READY_TO_MERGE_LABEL = "ready-to-merge"
+
 TERMINAL_STATES: frozenset[State] = frozenset(
     {State.DONE, State.DEVIN_DECLINED, State.CAN_CLOSE_ISSUE}
 )

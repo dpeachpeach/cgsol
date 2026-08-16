@@ -22,6 +22,7 @@ from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.github import GitHubClient
 from orchestrator.labels import (
+    READY_TO_MERGE_LABEL,
     RETIREMENT_REASONS,
     EscalationReason,
     State,
@@ -333,7 +334,10 @@ class Dispatcher:
                     f"**CI green** after {card.meta.ci_rounds} autofix round(s). "
                     "Waiting on human review.",
                 )
+            await self.set_ready_to_merge(card, True)
             return
+
+        await self.set_ready_to_merge(card, False)
 
         if self.store.session_for_issue(card.number, "ci-fix") is not None:
             return
@@ -343,6 +347,26 @@ class Dispatcher:
         if card.state is State.DEVIN_PR_OPEN:
             await self._move(card, State.CI_FAILING)
         await self.dispatch_ci_fix(card, failing)
+
+    async def set_ready_to_merge(self, card: IssueCard, ready: bool) -> None:
+        """Label the PR when the gate has passed and only a person is left.
+
+        Green CI alone is not the claim: a card escalated for anything other
+        than low confidence is in `human-review` because the pipeline does not
+        trust the diff, and a passing check does not answer that.
+        """
+        if ready and (
+            card.state is not State.HUMAN_REVIEW
+            or card.meta.escalation not in (None, EscalationReason.LOW_CONFIDENCE.value)
+        ):
+            ready = False
+        if card.pr_number is None or card.ready_to_merge == ready:
+            return
+        if ready:
+            await self.github.add_labels(card.pr_number, [READY_TO_MERGE_LABEL])
+        else:
+            await self.github.remove_label(card.pr_number, READY_TO_MERGE_LABEL)
+        card.ready_to_merge = ready
 
     async def dispatch_ci_fix(self, card: IssueCard, failing: list[CheckRun]) -> bool:
         # An autofix is a worker by another name: it spends the same way, so it

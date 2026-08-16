@@ -205,7 +205,7 @@ async def test_a_merged_pr_is_not_re_read_but_still_lands_the_card() -> None:
 
 
 async def test_a_terminal_card_stops_costing_a_check_read_every_sweep() -> None:
-    github = RecordingGitHub([issue(7, ["human-review"])], [pull_request(101, 7)])
+    github = RecordingGitHub([issue(7, ["devin-declined"])], [pull_request(101, 7)])
     poller = poller_for(github)
 
     await poller.reconcile()
@@ -213,6 +213,20 @@ async def test_a_terminal_card_stops_costing_a_check_read_every_sweep() -> None:
     await poller.reconcile()
 
     assert github.check_refs == []
+
+
+async def test_a_human_review_pr_is_read_once_and_then_left_alone() -> None:
+    """`human-review` is settled, but a card that arrived there across a restart
+    has no checks in the store, and 'green, merge it' and 'red, unpick it' are
+    the same card until something reads them. One read, then the cache."""
+    github = RecordingGitHub([issue(7, ["human-review"])], [pull_request(101, 7)])
+    poller = poller_for(github)
+
+    await poller.reconcile()
+    github.now += 180
+    await poller.reconcile()
+
+    assert github.check_refs == ["sha101"]
 
 
 async def test_the_remaining_budget_reaches_the_dashboard() -> None:

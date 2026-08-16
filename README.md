@@ -35,6 +35,13 @@ which makes it the cheapest thing the pipeline produces. Triage only reaches it
 with evidence — the file it read and what that file contains now — and a human
 still does the closing.
 
+One label sits outside the state machine: `ready-to-merge`, written on the
+**pull request** once its checks are green and the card carries no escalation
+other than low confidence. It is not a state — the issue stays `human-review`
+until a person merges — and it is derived from the checks the orchestrator read,
+not from the worker's sign-off comment, which is a claim rather than a verdict.
+It comes off again if CI later goes red.
+
 ## Triage cadence
 
 When an untriaged issue becomes a scout session is a spend decision, so it is a

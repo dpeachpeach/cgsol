@@ -11,6 +11,9 @@ pipeline:
   - {name: devin-fixing,   color: FBCA04, description: "Devin iterating on a red CI run. Returns to devin-pr-open."}
   - {name: human-review,   color: BFD4F2, description: "CI green. Waiting on human review."}
   - {name: done,           color: 0E8A16, description: "Merged and closed. Terminal."}
+  # Lives on the pull request rather than the issue: green gate, nothing left
+  # but a person's judgement.
+  - {name: ready-to-merge, color: 0E8A16, description: "Required checks green and no open escalation. A human's move."}
 tier:
   - {name: "tier:trivial", color: C5DEF5, description: "Lint, dep bumps, type annotations. max_acu_limit 1.5"}
   - {name: "tier:medium",  color: 7B9FD4, description: "Test coverage, small refactors. max_acu_limit 3"}

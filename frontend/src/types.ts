@@ -61,6 +61,7 @@ export interface IssueCard {
   checks: CheckRun[];
   pr_number: number | null;
   pr_merged: boolean;
+  ready_to_merge: boolean;
   last_synced: number;
   session_url?: string;
 }

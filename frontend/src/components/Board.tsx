@@ -196,6 +196,11 @@ function IssueTile({
             {card.meta.acus.toFixed(2)} ACU
           </Tag>
         )}
+        {card.ready_to_merge && (
+          <Tag round intent="success" icon="git-merge">
+            ready to merge
+          </Tag>
+        )}
         {card.meta.ci_rounds > 0 && (
           <Tag round intent="warning">
             CI ×{card.meta.ci_rounds}
