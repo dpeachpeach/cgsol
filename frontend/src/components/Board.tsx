@@ -38,16 +38,18 @@ export const COLUMNS: {
   {
     key: "human",
     label: "Request human",
-    // Declined belongs here rather than with the retired work: "an agent should
-    // not do this" is a handoff, not an outcome.
-    states: ["human-review", "devin-blocked", "devin-declined"],
+    states: ["human-review", "devin-blocked"],
     intent: "warning",
     accent: Colors.GOLD2,
   },
   {
     key: "ready",
     label: "Ready to close / merge",
-    states: ["can-close-issue", "done"],
+    // Declined sits here rather than under "request human": the pipeline is
+    // finished with it and the only move left is a close. Keeping it out of the
+    // human column stops thirteen "not for an agent" verdicts from burying the
+    // handful that genuinely want a person.
+    states: ["can-close-issue", "done", "devin-declined"],
     intent: "success",
     accent: Colors.GREEN2,
   },
