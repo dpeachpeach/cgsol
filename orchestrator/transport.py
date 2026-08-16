@@ -150,7 +150,10 @@ def build_transport(service: str) -> httpx.AsyncBaseTransport | None:
         return SimulatedGitHubTransport() if service == "github" else SimulatedDevinTransport()
     if settings.record:
         return RecordingTransport(cassette)
-    return None
+    # Live. Retry the connection, not the request: a keep-alive socket the far
+    # side closed while the pacer was asleep fails before any bytes are sent,
+    # so replaying it is safe and invisible, and losing it is not a real error.
+    return httpx.AsyncHTTPTransport(retries=2)
 
 
 def cassette_path(service: str) -> Path:

@@ -9,8 +9,11 @@ be kept every 15 seconds.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
+
+import httpx
 
 from orchestrator.config import Settings
 from orchestrator.dispatch import Dispatcher
@@ -219,3 +222,37 @@ async def test_the_remaining_budget_reaches_the_dashboard() -> None:
     await poller.reconcile()
 
     assert poller.store.snapshot()["budget"]["remaining"] == 4900
+
+
+# --- booting into a bad network ------------------------------------------------
+
+
+class FlakyGitHub(RecordingGitHub):
+    """Fails the first sweep the way a dropped keep-alive socket does."""
+
+    def __init__(self, issues: list[Issue], failures: int) -> None:
+        super().__init__(issues)
+        self.failures = failures
+
+    async def list_issues(
+        self, state: str = "all", limit: int = 100, since: str | None = None
+    ) -> list[Issue]:
+        if self.failures > 0:
+            self.failures -= 1
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return await super().list_issues(state, limit, since)
+
+
+async def test_a_dropped_connection_on_the_first_sweep_does_not_kill_the_process() -> None:
+    """The projection is derived from GitHub, so a first sync that fails costs
+    latency, not correctness — exiting turns a lost socket into an outage."""
+    github = FlakyGitHub([issue(7)], failures=1)
+    poller = poller_for(github, Settings(replay=True, poll_waiting_seconds=0))
+
+    await poller.start()
+    try:
+        assert not poller.store.first_sync.is_set()
+        await asyncio.wait_for(poller.store.first_sync.wait(), timeout=2)
+        assert poller.store.card(7) is not None
+    finally:
+        await poller.stop()

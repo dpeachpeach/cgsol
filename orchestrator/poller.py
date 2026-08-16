@@ -74,28 +74,35 @@ class Poller:
         try:
             await self.reconcile()
             self.store.first_sync.set()
-        except RateLimited as limit:
-            # Refusing to boot until GitHub answers turns an hour of thin
-            # budget into an hour of downtime. Come up unhealthy and converge.
-            log.warning("first sync deferred: %s", limit)
-            self._tasks = [asyncio.create_task(self._recover(limit), name="cgsol-recover")]
+        except asyncio.CancelledError:
+            raise
+        except Exception as failure:
+            # Refusing to boot until GitHub answers turns a thin budget or a
+            # dropped connection into downtime. Come up unhealthy and converge:
+            # the projection is derived, so a late first sync costs latency.
+            log.warning("first sync deferred: %s", failure)
+            self._tasks = [asyncio.create_task(self._recover(failure), name="cgsol-recover")]
             return
         self._tasks = [
             asyncio.create_task(self._session_loop(), name="cgsol-sessions"),
             asyncio.create_task(self._reconcile_loop(), name="cgsol-reconcile"),
         ]
 
-    async def _recover(self, limit: RateLimited) -> None:
+    async def _recover(self, failure: Exception) -> None:
         """Retry the first sync until it lands, then run the loops as normal."""
         while not self.store.first_sync.is_set():
-            await self._wait_out(limit)
+            if isinstance(failure, RateLimited):
+                await self._wait_out(failure)
+            else:
+                await asyncio.sleep(self.settings.poll_waiting_seconds)
             try:
                 await self.reconcile()
                 self.store.first_sync.set()
-            except RateLimited as again:
-                limit = again
-            except Exception:
-                log.exception("deferred first sync failed")
+            except asyncio.CancelledError:
+                raise
+            except Exception as again:
+                failure = again
+                log.warning("deferred first sync failed: %s", again)
         self._tasks += [
             asyncio.create_task(self._session_loop(), name="cgsol-sessions"),
             asyncio.create_task(self._reconcile_loop(), name="cgsol-reconcile"),
