@@ -3,66 +3,79 @@ import type { CSSProperties } from "react";
 
 import type { IssueCard, State } from "../types";
 
-/** The autofix loop is a story worth showing, so ci-failing and devin-fixing
- *  are first-class columns rather than a badge on devin-pr-open. */
+/** Five columns, eleven labels: the label set is the state machine and stays
+ *  as it is on GitHub, but a column per label spends the width of the board on
+ *  transitions that are empty whenever nothing is mid-flight. Each card still
+ *  carries its own label, so `ci-failing` is legible without a column of its
+ *  own. */
 export const COLUMNS: {
-  state: State;
+  key: string;
   label: string;
+  states: (State | null)[];
   intent?: "danger" | "warning" | "success" | "primary";
   accent: string;
 }[] = [
-  { state: "needs-triage", label: "Needs triage", accent: Colors.GRAY1 },
   {
-    state: "devin-eligible",
-    label: "Eligible",
+    key: "needs-triage",
+    label: "Needs triage",
+    states: [null, "needs-triage"],
+    accent: Colors.GRAY1,
+  },
+  {
+    key: "triaged",
+    label: "Triaged",
+    states: ["devin-eligible"],
     intent: "primary",
     accent: Colors.BLUE2,
   },
   {
-    state: "devin-working",
-    label: "Working",
+    key: "working",
+    label: "Devin working",
+    states: ["devin-working", "devin-pr-open", "ci-failing", "devin-fixing"],
     intent: "primary",
     accent: Colors.INDIGO2,
   },
   {
-    state: "devin-pr-open",
-    label: "PR open",
-    intent: "primary",
-    accent: Colors.CERULEAN2,
-  },
-  {
-    state: "ci-failing",
-    label: "CI failing",
-    intent: "danger",
-    accent: Colors.RED2,
-  },
-  {
-    state: "devin-fixing",
-    label: "Devin fixing",
-    intent: "warning",
-    accent: Colors.ORANGE2,
-  },
-  {
-    state: "human-review",
-    label: "Human review",
+    key: "human",
+    label: "Request human",
+    // Declined belongs here rather than with the retired work: "an agent should
+    // not do this" is a handoff, not an outcome.
+    states: ["human-review", "devin-blocked", "devin-declined"],
     intent: "warning",
     accent: Colors.GOLD2,
   },
-  { state: "done", label: "Done", intent: "success", accent: Colors.GREEN2 },
   {
-    state: "can-close-issue",
-    label: "Can close",
+    key: "ready",
+    label: "Ready to close / merge",
+    states: ["can-close-issue", "done"],
     intent: "success",
-    accent: Colors.FOREST2,
-  },
-  { state: "devin-declined", label: "Declined", accent: Colors.GRAY2 },
-  {
-    state: "devin-blocked",
-    label: "Blocked",
-    intent: "danger",
-    accent: Colors.VERMILION2,
+    accent: Colors.GREEN2,
   },
 ];
+
+const STATE_LABEL: Record<string, string> = {
+  "needs-triage": "needs triage",
+  "devin-eligible": "eligible",
+  "devin-working": "working",
+  "devin-pr-open": "PR open",
+  "ci-failing": "CI failing",
+  "devin-fixing": "Devin fixing",
+  "human-review": "human review",
+  "devin-declined": "declined",
+  "devin-blocked": "blocked",
+  "can-close-issue": "can close",
+  done: "done",
+};
+
+const STATE_INTENT: Record<string, "danger" | "warning" | "success" | "primary"> =
+  {
+    "devin-pr-open": "primary",
+    "ci-failing": "danger",
+    "devin-fixing": "warning",
+    "devin-blocked": "danger",
+    done: "success",
+    "can-close-issue": "success",
+  };
 
 const TIER_INTENT: Record<string, "success" | "warning" | "danger"> = {
   "tier:trivial": "success",
@@ -96,6 +109,11 @@ function IssueTile({
         <strong>#{card.number}</strong> {card.title}
       </div>
       <div className="card__meta">
+        {card.state && (
+          <Tag round minimal intent={STATE_INTENT[card.state]}>
+            {STATE_LABEL[card.state] ?? card.state}
+          </Tag>
+        )}
         {card.tier && (
           <Tag round intent={TIER_INTENT[card.tier]}>
             {card.tier.replace("tier:", "")}
@@ -145,29 +163,16 @@ export function Board({
   cards: IssueCard[];
   onSelect: (n: number) => void;
 }) {
-  const untriaged = cards.filter((card) => card.state === null);
   return (
     <div className="board">
-      {untriaged.length > 0 && (
-        <div
-          className="column"
-          style={{ "--accent": Colors.GRAY1 } as CSSProperties}
-        >
-          <div className="column__head">
-            <span>Unlabelled</span>
-            <Tag round>{untriaged.length}</Tag>
-          </div>
-          {untriaged.map((card) => (
-            <IssueTile key={card.number} card={card} onSelect={onSelect} />
-          ))}
-        </div>
-      )}
       {COLUMNS.map((column) => {
-        const items = cards.filter((card) => card.state === column.state);
+        const items = cards.filter((card) =>
+          column.states.includes(card.state),
+        );
         return (
           <div
             className="column"
-            key={column.state}
+            key={column.key}
             style={{ "--accent": column.accent } as CSSProperties}
           >
             <div className="column__head">

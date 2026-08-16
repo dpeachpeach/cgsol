@@ -48,7 +48,10 @@ body {
 }
 
 .column {
-  flex: 0 0 268px;
+  /* Five columns share the width rather than scrolling a fixed rail off the
+     right edge; 268px stays the floor so a narrow window still scrolls. */
+  flex: 1 1 268px;
+  min-width: 268px;
   display: flex;
   flex-direction: column;
   gap: 8px;
