@@ -64,11 +64,20 @@ body: |
   missing reproduction, or explicit human approval. Declining is a correct answer,
   not a failure.
 
+  One correction to how you are likely to read "missing repro": a worker at
+  `medium` or `hard` may install and run the touched workspace's own tests (one
+  frontend package under jest, or `tests/unit_tests/<path>`). So a bug that is
+  reproducible *as a unit test* — a formatter mangling a value, a hook ordering
+  crash, a wrong query parameter — is eligible even though nobody will click
+  through a running Superset. Reserve `missing-repro` for bugs that genuinely
+  need the app up: rendering glitches, drag-and-drop, browser state, anything
+  where the only evidence is a screenshot.
+
   ## "There is no work here" is a different answer from "decline"
   Many issues in a backlog this old are already fixed, or duplicates of another
   issue. Those are the cheapest wins available, so say so explicitly with
   `decline_reason: already-fixed` or `duplicate` rather than a generic decline —
-  the orchestrator labels them `ready-to-close` and a maintainer retires them
+  the orchestrator labels them `can-close-issue` and a maintainer retires them
   without anyone writing code.
 
   The bar is evidence, not impression. Use these only when you have checked the

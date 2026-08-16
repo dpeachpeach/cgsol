@@ -7,7 +7,7 @@ export type State =
   | "devin-fixing"
   | "human-review"
   | "devin-declined"
-  | "ready-to-close"
+  | "can-close-issue"
   | "devin-blocked"
   | "done";
 

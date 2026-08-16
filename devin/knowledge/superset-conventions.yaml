@@ -12,13 +12,25 @@ body: |
   agent-driven maintenance pipeline. Issues here are adapted copies of upstream
   issues; the upstream project is not affected by anything you do.
 
-  ## The one rule that overrides your instincts
+  ## The rule that overrides your instincts
 
-  Sessions in this pipeline **do not build a working Superset environment**. No
-  `pip install -r requirements/*.txt`, no `npm ci` in `superset-frontend/`, no
-  `docker compose up`, no `pytest`, no `superset run`. Superset's bootstrap costs
-  more than most of the fixes are worth, and the fork's own CI already runs the
-  real thing on every push. Write the change, lint the changed files, push.
+  Sessions in this pipeline **never build a working Superset environment**: no
+  `pip install -r requirements/*.txt`, no `docker compose up`, no `superset run`,
+  no database. Superset's bootstrap costs more than most of the fixes are worth,
+  and the fork's own CI runs the real thing on every push.
+
+  Running *tests* is a narrower question, decided by tier:
+
+  - `tier:trivial` and CI-autofix sessions: lint the changed files and push.
+    Nothing else. These changes are mechanical and CI is cheaper than a build.
+  - `tier:medium` and `tier:hard`: you may install and run **the touched
+    workspace only** — jest for one frontend package from `superset-frontend/`,
+    or `pytest tests/unit_tests/<path>` — when a blind fix would plausibly cost
+    a CI round. Session wall-clock cap is 2 hours; if an install threatens it,
+    abandon it and push.
+
+  A local pass is evidence, not a verdict. CI decides, and the PR should say
+  what you ran and what it showed.
 
   ## Layout
 

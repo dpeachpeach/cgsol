@@ -71,7 +71,7 @@ async def test_an_evidenced_already_fixed_verdict_retires_the_issue() -> None:
     store, github = store_with_issue(), FakeGitHub()
     await dispatcher_for(store, github).apply_verdict(verdict())
     card = store.card(7)
-    assert card is not None and card.state is State.READY_TO_CLOSE
+    assert card is not None and card.state is State.CAN_CLOSE_ISSUE
     assert "Evidence" in github.comments[0]
 
 
@@ -139,7 +139,7 @@ async def test_a_waiting_scout_holding_verdicts_is_not_left_holding_them() -> No
 
     await poller.poll_sessions()
     card = store.card(7)
-    assert card is not None and card.state is State.READY_TO_CLOSE
+    assert card is not None and card.state is State.CAN_CLOSE_ISSUE
 
     await poller.poll_sessions()
     assert devin.gets == 1  # consumed once, then never fetched again

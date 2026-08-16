@@ -26,9 +26,20 @@ body: |
 
   Test coverage, small refactors, contained bug fixes with a clear reproduction.
 
-  You may **write** tests. You still may not **run** them: adding a test and
-  pushing it is how you ask CI whether you were right. Write the test so that its
-  failure message would tell a human what broke — you will not be watching it run.
+  You may write tests, and at this tier you **may also run them — for the touched
+  workspace only**, when you judge that a blind fix would plausibly cost a CI
+  round. Never bootstrap the whole application:
+
+  - Frontend: from `superset-frontend/`, install and run jest for the touched
+    package only (e.g. `npx jest plugins/plugin-chart-table`). The install is
+    monorepo-wide and slow; that is the cost you are weighing.
+  - Python: run the DB-free subset that covers your change, e.g.
+    `pytest tests/unit_tests/<path>`. Nothing that wants Postgres, Redis, Celery
+    or a running Superset.
+
+  Do not report a local pass as proof — CI is still the verdict, and you say in
+  the PR what you ran and what it showed. If the install or run overruns the
+  2-hour cap, abandon it and push; a fix waiting on `npm ci` helps nobody.
 
   Follow the repo's existing test layout, fixtures, and naming. A test that does
   not look like its neighbours is a review comment even when it passes.

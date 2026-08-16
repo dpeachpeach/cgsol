@@ -93,7 +93,7 @@ def compute(
     merged = [card for card in cards if card.pr_merged or card.state is State.DONE]
     # Issues taken off the backlog without any code being written. The cheapest
     # output the pipeline has, and invisible if it is filed under "declined".
-    retired = [card for card in cards if card.state is State.READY_TO_CLOSE]
+    retired = [card for card in cards if card.state is State.CAN_CLOSE_ISSUE]
     with_pr = [card for card in cards if card.meta.pr_url]
 
     # Autonomy: a merged PR that took zero human turns. Not "no human looked at

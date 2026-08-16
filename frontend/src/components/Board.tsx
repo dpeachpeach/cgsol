@@ -14,7 +14,7 @@ export const COLUMNS: { state: State; label: string; intent?: "danger" | "warnin
     { state: "devin-fixing", label: "Devin fixing", intent: "warning" },
     { state: "human-review", label: "Human review", intent: "warning" },
     { state: "done", label: "Done", intent: "success" },
-    { state: "ready-to-close", label: "Ready to close", intent: "success" },
+    { state: "can-close-issue", label: "Can close", intent: "success" },
     { state: "devin-declined", label: "Declined" },
     { state: "devin-blocked", label: "Blocked", intent: "danger" },
   ];

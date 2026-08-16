@@ -177,15 +177,15 @@ class Dispatcher:
             if reason in RETIREMENT_REASONS and verdict.reasoning.strip():
                 # "Already fixed" without evidence is worse than no verdict: it
                 # invites a human to close a live bug on an agent's say-so.
-                await self._move(card, State.READY_TO_CLOSE)
+                await self._move(card, State.CAN_CLOSE_ISSUE)
                 await self.github.upsert_meta(
                     card.number,
                     card.meta,
-                    f"**Ready to close** — `{reason}` (confidence {verdict.confidence:.2f}). "
+                    f"**Can close** — `{reason}` (confidence {verdict.confidence:.2f}). "
                     "No code change appears to be needed; a human decides whether to "
                     f"close.\n\n_Evidence:_ {verdict.reasoning}",
                 )
-                self.metrics.record_escalation(f"ready-to-close:{reason}")
+                self.metrics.record_escalation(f"can-close-issue:{reason}")
                 return
             await self._move(card, State.DEVIN_DECLINED)
             await self.github.upsert_meta(
