@@ -7,6 +7,10 @@ no diff, no review, and no history. Creating them from YAML is what makes
 
 Idempotent: matches existing resources by title/name and updates in place, then
 writes the resulting IDs back to .env so the orchestrator can reference them.
+
+Uses the v3 org-scoped endpoints, which is where a playbook can carry its own
+`structured_output_schema` — the scout's verdict shape then lives on the
+playbook rather than being re-sent with every dispatch.
 """
 
 from __future__ import annotations
@@ -25,21 +29,31 @@ from orchestrator.resources import ResourceSet, load_resources
 ENV_PATH = Path(".env")
 
 
-async def _list(client: httpx.AsyncClient, path: str, key: str) -> list[dict[str, Any]]:
+async def _list(client: httpx.AsyncClient, path: str) -> list[dict[str, Any]]:
     response = await client.get(path)
     if response.status_code != 200:
         return []
     payload = response.json()
     if isinstance(payload, list):
         return payload
-    value = payload.get(key, [])
-    return value if isinstance(value, list) else []
+    for key in ("items", "playbooks", "knowledge", "notes"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return []
 
 
 async def push(resources: ResourceSet, dry_run: bool = False) -> dict[str, str]:
     settings = get_settings()
-    if not settings.devin_api_key and not dry_run:
-        raise SystemExit("DEVIN_API_KEY is required (or pass --dry-run)")
+    if not dry_run:
+        if not settings.devin_api_key:
+            raise SystemExit("DEVIN_API_KEY is required (or pass --dry-run)")
+        if not settings.devin_org_id:
+            raise SystemExit("DEVIN_ORG_ID is required (or pass --dry-run)")
+
+    org = settings.devin_org_id
+    playbooks_path = f"/v3/organizations/{org}/playbooks"
+    notes_path = f"/v3/organizations/{org}/knowledge/notes"
 
     ids: dict[str, str] = {}
     async with httpx.AsyncClient(
@@ -49,33 +63,34 @@ async def push(resources: ResourceSet, dry_run: bool = False) -> dict[str, str]:
     ) as client:
         existing_playbooks = {
             item.get("title"): item.get("playbook_id")
-            for item in await _list(client, "/v1/playbooks", "playbooks")
+            for item in await _list(client, playbooks_path)
         }
         for spec in resources.playbooks.values():
-            payload = {"title": spec.title, "body": spec.body, "macro": spec.macro}
+            payload: dict[str, Any] = {"title": spec.title, "body": spec.body, "macro": spec.macro}
+            if spec.structured_output_schema is not None:
+                payload["structured_output_schema"] = spec.structured_output_schema
             playbook_id = existing_playbooks.get(spec.title)
             if dry_run:
                 print(f"[dry-run] {'update' if playbook_id else 'create'} playbook {spec.title}")
                 continue
             if playbook_id:
-                response = await client.put(f"/v1/playbooks/{playbook_id}", json=payload)
+                response = await client.put(f"{playbooks_path}/{playbook_id}", json=payload)
                 response.raise_for_status()
             else:
-                response = await client.post("/v1/playbooks", json=payload)
+                response = await client.post(playbooks_path, json=payload)
                 response.raise_for_status()
                 playbook_id = response.json()["playbook_id"]
             print(f"playbook {spec.title} -> {playbook_id}")
             ids[spec.env_var] = str(playbook_id)
 
         existing_notes = {
-            item.get("name"): item.get("id") or item.get("note_id")
-            for item in await _list(client, "/v1/knowledge", "knowledge")
+            item.get("name"): item.get("note_id") for item in await _list(client, notes_path)
         }
         for note in resources.knowledge.values():
-            payload = {
+            note_payload: dict[str, Any] = {
                 "name": note.name,
                 "body": note.body,
-                "trigger_description": note.trigger_description,
+                "trigger": note.trigger_description,
                 "pinned_repo": note.pinned_repo,
             }
             note_id = existing_notes.get(note.name)
@@ -83,12 +98,12 @@ async def push(resources: ResourceSet, dry_run: bool = False) -> dict[str, str]:
                 print(f"[dry-run] {'update' if note_id else 'create'} knowledge {note.name}")
                 continue
             if note_id:
-                response = await client.put(f"/v1/knowledge/{note_id}", json=payload)
+                response = await client.put(f"{notes_path}/{note_id}", json=note_payload)
                 response.raise_for_status()
             else:
-                response = await client.post("/v1/knowledge", json=payload)
+                response = await client.post(notes_path, json=note_payload)
                 response.raise_for_status()
-                note_id = response.json()["id"]
+                note_id = response.json()["note_id"]
             print(f"knowledge {note.name} -> {note_id}")
             ids[note.env_var] = str(note_id)
     return ids
