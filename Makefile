@@ -44,7 +44,9 @@ automations: ## Render devin/automations/*.yaml for review before applying.
 
 .PHONY: simulate
 simulate: ## POST recorded webhook payloads (correct HMAC) at the receiver.
-	$(UV) run python -m orchestrator.simulate
+	# The sender has to sign with the secret the receiver booted with, and a
+	# credential-free receiver booted with the replay one.
+	REPLAY=true $(UV) run python -m orchestrator.simulate
 
 .PHONY: dev
 dev: ## Backend on :8000 with reload (replay mode).
