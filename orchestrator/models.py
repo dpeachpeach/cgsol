@@ -82,7 +82,12 @@ class SessionInfo(BaseModel):
 
     @property
     def waiting(self) -> bool:
-        return self.status_enum in {"blocked"} or self.status in {"suspended"}
+        # `blocked` is v1's word for it; v3 says which kind of block it is.
+        return self.status_enum in {
+            "blocked",
+            "waiting_for_user",
+            "waiting_for_approval",
+        } or self.status in {"suspended"}
 
 
 class IssueMeta(BaseModel):

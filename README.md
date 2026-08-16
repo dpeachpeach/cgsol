@@ -105,6 +105,13 @@ make bootstrap          # push playbooks + knowledge notes, write their IDs back
 make live               # includes the smee tunnel, so nothing to install locally
 ```
 
+`DEVIN_API_KEY` has to belong to a service user with the org-level
+`UseDevinSessions` permission: playbooks, knowledge, dispatch and polling all run
+against `/v3/organizations/$DEVIN_ORG_ID/*`, which is where a playbook can carry
+its own structured-output schema and where a session reports `acus_consumed` —
+without that number there is no cost story. A personal key falls back to the v1
+endpoints, and the ACU columns go quiet.
+
 `make seed` files the corpus into a fresh fork. The fork this was demonstrated on
 is already seeded; the script exists so the setup is reproducible, and
 `seed/issues.yaml` doubles as the answer key replay scores triage against.
