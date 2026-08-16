@@ -51,6 +51,9 @@ export function MetricsPanel({
   }
   const { headline, funnel, by_tier: byTier, escalations } = metrics;
   const widest = Math.max(...Object.values(funnel), 1);
+  // Sessions ran, and every one of them reports acus_consumed: 0.0. That is the
+  // API declining to say, not free work, so nothing here should read as zero.
+  const unmeasured = headline.total_acu === 0 && headline.build_acu === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -83,8 +86,12 @@ export function MetricsPanel({
         />
         <Metric
           label="Pipeline ACU"
-          value={num(headline.total_acu)}
-          sub={`build sessions: ${num(headline.build_acu)} (counted separately)`}
+          value={unmeasured ? "—" : num(headline.total_acu)}
+          sub={
+            unmeasured
+              ? "the Devin API reports no ACUs for these sessions"
+              : `build sessions: ${num(headline.build_acu)} (counted separately)`
+          }
         />
       </div>
 
@@ -124,7 +131,7 @@ export function MetricsPanel({
               <tr key={tier}>
                 <td>{tier}</td>
                 <td>{row.issues}</td>
-                <td>{row.acu.toFixed(2)}</td>
+                <td>{unmeasured ? "—" : row.acu.toFixed(2)}</td>
                 <td>{pct(row.acu_share)}</td>
                 <td>{pct(row.merge_rate)}</td>
                 <td>{row.ci_rounds.toFixed(1)}</td>
