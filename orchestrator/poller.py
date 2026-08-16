@@ -29,7 +29,7 @@ from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient
-from orchestrator.labels import State
+from orchestrator.labels import TERMINAL_STATES, State
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import IssueMeta, SessionInfo, Verdict
 from orchestrator.state import Store
@@ -113,17 +113,22 @@ class Poller:
         for session in sessions:
             previous = self.store.session(session.session_id)
             self.store.upsert_session(session)
-            settled = session.terminal or session.waiting
-            if settled and session.session_id not in self._consumed:
-                # One GET, and only for a session that has stopped: a waiting
-                # session may be holding a result or may just be blocked, and
-                # the list payload does not carry structured output either way.
-                if await self._on_settled(session):
-                    self._consumed.add(session.session_id)
-            elif previous is None and session.origin == "automation":
+            if previous is None and session.origin == "automation":
                 # Discovered, not dispatched: an Automation created this session
-                # and nobody told us. Convergence, not notification.
+                # and nobody told us. Convergence, not notification. Adoption is
+                # independent of status, because first sight and stopped are not
+                # mutually exclusive and there is no second first sight.
                 await self._adopt(session)
+            settled = session.terminal or session.waiting
+            # One GET, and only for a session that has stopped: a waiting session
+            # may be holding a result or may just be blocked, and the list payload
+            # does not carry structured output either way.
+            if (
+                settled
+                and session.session_id not in self._consumed
+                and await self._on_settled(session)
+            ):
+                self._consumed.add(session.session_id)
 
     async def _adopt(self, session: SessionInfo) -> None:
         number = session.issue_number
@@ -201,7 +206,11 @@ class Poller:
                 checks = await self.github.check_runs_for_ref(pr["head"]["sha"])
                 self.store.set_checks(issue.number, checks)
                 await self.dispatcher.evaluate_ci(card, checks, card.pr_merged)
-            if issue.state == "closed" and card.state not in (State.DONE, State.DEVIN_DECLINED):
+            # Closing an issue that already reached a terminal state does not
+            # rewrite how it got there: a retired issue closed by a maintainer
+            # is not a merged PR, and counting it as one inflates every headline
+            # that divides by merges.
+            if issue.state == "closed" and card.state not in TERMINAL_STATES:
                 card.state = State.DONE
 
         await self.poll_sessions()

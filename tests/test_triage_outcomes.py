@@ -145,6 +145,23 @@ async def test_a_waiting_scout_holding_verdicts_is_not_left_holding_them() -> No
     assert devin.gets == 1  # consumed once, then never fetched again
 
 
+async def test_an_automation_session_is_adopted_even_if_it_is_already_paused() -> None:
+    """First sight and stopped are not exclusive, and there is no second first sight."""
+    store, github = store_with_issue(), FakeGitHub()
+    session = SessionInfo(
+        session_id="devin-1",
+        tags=["cgsol", "role:worker", "issue:7"],
+        status="running",
+        status_enum="waiting_for_user",
+        origin="automation",
+    )
+    poller = poller_for(FakeDevin(session), store, dispatcher_for(store, github))
+
+    await poller.poll_sessions()
+    card = store.card(7)
+    assert card is not None and card.meta.session_id == "devin-1"
+
+
 async def test_a_waiting_scout_with_nothing_to_say_is_retried_not_written_off() -> None:
     """Waiting is also how a session asks a question mid-flight."""
     store, github = store_with_issue(), FakeGitHub()
