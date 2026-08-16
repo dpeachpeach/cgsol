@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+from enum import Enum
 from functools import lru_cache
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class TriageMode(str, Enum):
+    """When an untriaged issue turns into a scout session.
+
+    ``AUTO`` reacts to the webhook, ``CHUNKED`` lets issues pile up and spends
+    once per interval, ``MANUAL`` only ever triages when a human asks. The
+    difference is entirely about who decides when money is spent.
+    """
+
+    AUTO = "auto"
+    CHUNKED = "chunked"
+    MANUAL = "manual"
 
 
 class Settings(BaseSettings):
@@ -16,6 +32,22 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_webhook_secret: str = ""
     github_api_url: str = "https://api.github.com"
+    #: The tunnel GitHub delivers to. `make github-app` mints one when unset.
+    smee_url: str = ""
+
+    # --- GitHub App -----------------------------------------------------------
+    # Written by `make github-app`. When these are set the orchestrator mints
+    # short-lived installation tokens for itself and `github_token` is unused;
+    # when they are not, the PAT is still the credential.
+    github_app_id: str = ""
+    github_app_slug: str = ""
+    #: The PEM, base64-encoded so it survives a single .env line. A literal or
+    #: \n-escaped PEM is accepted too, for a key pasted in by hand.
+    github_app_private_key: str = ""
+    github_app_installation_id: str = ""
+    #: Refresh this many seconds before the installation token actually expires;
+    #: a token that dies mid-request costs a retry and a confusing 401 in a log.
+    github_app_token_skew_seconds: float = 300
 
     # Logins whose label writes must never be treated as human intent. Devin
     # writes labels too; without this filter the state machine feeds itself.
@@ -34,8 +66,21 @@ class Settings(BaseSettings):
     playbook_ci_autofix: str = ""
     knowledge_superset_conventions: str = ""
 
+    # --- Triage cadence -------------------------------------------------------
+    #: Manual by default: an orchestrator that starts spending ACUs the moment
+    #: it can see a backlog is not a demo anyone wants to run twice.
+    triage_mode: TriageMode = TriageMode.MANUAL
+    triage_interval_seconds: float = 1800
+
     # --- Policy ---------------------------------------------------------------
-    confidence_threshold: float = 0.6
+    #: A verdict below this is routed to a human instead of a worker. Off by
+    #: default: the analyst's own eligibility call is the gate, and a confident
+    #: wrong answer is not less likely than a hesitant right one. Raise it to
+    #: buy review at the cost of throughput.
+    confidence_threshold: float = 0.0
+    #: Devin parks a finished session at `waiting_for_user` forever. Once its
+    #: result is banked there is nobody to answer, and it is holding a slot.
+    terminate_consumed_sessions: bool = True
     max_ci_rounds: int = 3
     max_concurrent_workers: int = 6
     scout_batch_max: int = 25
@@ -47,9 +92,17 @@ class Settings(BaseSettings):
 
     # --- Timing (seconds) -----------------------------------------------------
     batch_window_seconds: float = 60
-    poll_active_seconds: float = 25
+    poll_active_seconds: float = 15
     poll_waiting_seconds: float = 60
     reconcile_seconds: float = 180
+    #: How often a sweep re-reads every issue instead of only the ones GitHub
+    #: says moved. An incremental sweep cannot see a deletion, a card the
+    #: projection never had, or a relabel that raced the clock.
+    full_reconcile_seconds: float = 3600
+    #: Rewind the `since` filter by this much. Two clocks and a request in
+    #: flight make equality the wrong test; re-reading a few unchanged issues
+    #: is cheaper than missing one.
+    reconcile_overlap_seconds: float = 60
     delivery_ttl_seconds: float = 900
 
     # --- Modes ----------------------------------------------------------------
@@ -103,6 +156,31 @@ class Settings(BaseSettings):
             if name not in self.model_fields_set:
                 setattr(self, name, compressed)
         return self
+
+    @property
+    def github_app_configured(self) -> bool:
+        return bool(self.github_app_id and self.github_app_private_key)
+
+    @property
+    def github_app_login(self) -> str:
+        """How the App authors events. An App's writes arrive as `<slug>[bot]`,
+        which is a different sender from the PAT's human login."""
+        return f"{self.github_app_slug}[bot]" if self.github_app_slug else ""
+
+    @property
+    def github_app_private_key_pem(self) -> str:
+        """The PEM, however it was stored. Never log the result."""
+        raw = self.github_app_private_key.strip()
+        if not raw:
+            return ""
+        if "-----BEGIN" in raw:
+            decoded = raw.replace("\\n", "\n")
+        else:
+            try:
+                decoded = base64.b64decode(raw, validate=True).decode()
+            except (binascii.Error, UnicodeDecodeError) as exc:
+                raise ValueError("GITHUB_APP_PRIVATE_KEY is neither a PEM nor base64") from exc
+        return decoded if decoded.endswith("\n") else decoded + "\n"
 
     @property
     def repo_owner(self) -> str:

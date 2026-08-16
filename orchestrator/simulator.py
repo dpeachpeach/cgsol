@@ -34,6 +34,7 @@ empty, which is a demo of the wrong half of the system.
 from __future__ import annotations
 
 import base64
+import email.utils
 import json
 import re
 import time
@@ -62,6 +63,11 @@ _TIER_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 
 _TIER_ACUS = {"trivial": 0.9, "medium": 2.1, "hard": 3.8}
 
+#: The simulated fork answers with a budget too, so the pacing, the reserve and
+#: the dashboard's indicator are exercised by the replay rather than only by
+#: tests. Generous enough that a demo never runs it down.
+SIMULATED_BUDGET = 5000
+
 
 def _first_ci_is_red(number: int) -> bool:
     """Roughly a third of first attempts come back red — that is why there is a
@@ -80,9 +86,19 @@ def _slug(title: str) -> str:
 
 
 def _json(payload: Any, status: int = 200, request: httpx.Request | None = None) -> httpx.Response:
+    state = world()
+    state.spent += 1
     return httpx.Response(
         status_code=status,
-        headers={"content-type": "application/json"},
+        headers={
+            "content-type": "application/json",
+            # The simulated fork's clock, not the container's: the poller sets
+            # its `since=` window from this header.
+            "date": email.utils.formatdate(state.now(), usegmt=True),
+            "x-ratelimit-limit": str(SIMULATED_BUDGET),
+            "x-ratelimit-remaining": str(max(0, SIMULATED_BUDGET - state.spent)),
+            "x-ratelimit-reset": str(int(state.budget_resets_at)),
+        },
         content=json.dumps(payload).encode(),
         request=request,
     )
@@ -105,10 +121,12 @@ class SimulatedWorld:
         self.sessions: dict[str, dict[str, Any]] = {}
         self.corpus: dict[str, dict[str, Any]] = {}
         self.review_started: dict[int, float] = {}
+        self.spent = 0
         self._next_comment_id = 1_000
         self._next_pr = 100
         self._next_session = 1
-        self._clock: float | None = None
+        self._clock: float | None = _epoch
+        self.budget_resets_at = self.now() + 3600
         self._load(snapshot or _snapshot_path())
 
     # --- clock ----------------------------------------------------------------
@@ -125,6 +143,17 @@ class SimulatedWorld:
         if self._clock is None:
             self._clock = time.time()
         self._clock += seconds
+
+    @staticmethod
+    def set_epoch(value: float | None) -> None:
+        """Pin where a freshly reset world starts.
+
+        A sweep asks GitHub for issues touched `since` the last one, so the
+        wall clock ends up in a URL, and a URL that changes between the
+        recording and the replay is a cassette miss.
+        """
+        global _epoch
+        _epoch = value
 
     # --- seeding --------------------------------------------------------------
 
@@ -362,10 +391,17 @@ class SimulatedWorld:
 
     # --- comments / labels ----------------------------------------------------
 
+    def touch(self, number: int) -> None:
+        """Bump `updated_at`, the field a `since=` sweep filters on."""
+        issue = self.issues.get(number)
+        if issue is not None:
+            issue["updated_at"] = _iso(self.now())
+
     def add_comment(self, number: int, body: str) -> dict[str, Any]:
         self._next_comment_id += 1
         comment = {"id": self._next_comment_id, "body": body, "user": {"login": "cgsol[bot]"}}
         self.comments.setdefault(number, []).append(comment)
+        self.touch(number)
         return comment
 
     def update_comment(self, comment_id: int, body: str) -> None:
@@ -384,6 +420,8 @@ def _snapshot_path() -> Path:
 
 
 _world: SimulatedWorld | None = None
+#: Set by the scripted run; `None` means the world runs on the wall clock.
+_epoch: float | None = None
 
 
 def world() -> SimulatedWorld:
@@ -419,10 +457,12 @@ class SimulatedGitHubTransport(httpx.AsyncBaseTransport):
                 if page > 1:
                     return _json([], request=request)
                 wanted = request.url.params.get("state", "open")
+                since = request.url.params.get("since")
                 issues = [
                     issue
                     for issue in state.issues.values()
-                    if wanted == "all" or issue["state"] == wanted
+                    if (wanted == "all" or issue["state"] == wanted)
+                    and (since is None or issue["updated_at"] >= since)
                 ]
                 return _json([_issue_json(issue) for issue in issues], request=request)
 
@@ -450,12 +490,14 @@ class SimulatedGitHubTransport(httpx.AsyncBaseTransport):
             for label in body.get("labels", []):
                 if label not in issue["labels"]:
                     issue["labels"].append(label)
+            state.touch(number)
             return _json([{"name": name} for name in issue["labels"]], request=request)
 
         if match := re.fullmatch(r"/repos/[^/]+/[^/]+/issues/(\d+)/labels/(.+)", path):
             number, label = int(match.group(1)), match.group(2)
             issue = state.issues[number]
             issue["labels"] = [name for name in issue["labels"] if name != label]
+            state.touch(number)
             return _json([{"name": name} for name in issue["labels"]], request=request)
 
         if re.fullmatch(r"/repos/[^/]+/[^/]+/pulls", path):

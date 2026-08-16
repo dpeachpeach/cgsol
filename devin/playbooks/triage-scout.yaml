@@ -28,7 +28,7 @@ structured_output_schema:
           reasoning: {type: string, maxLength: 800}
           decline_reason:
             type: string
-            enum: [product-decision, domain-expertise, missing-repro, ambiguous-requirement, needs-approval, out-of-scope, none]
+            enum: [already-fixed, duplicate, product-decision, domain-expertise, missing-repro, ambiguous-requirement, needs-approval, out-of-scope, none]
 body: |
   # Triage Scout
 
@@ -63,6 +63,29 @@ body: |
   issue needs a product decision, domain expertise the repo does not encode, a
   missing reproduction, or explicit human approval. Declining is a correct answer,
   not a failure.
+
+  One correction to how you are likely to read "missing repro": a worker at
+  `medium` or `hard` may install and run the touched workspace's own tests (one
+  frontend package under jest, or `tests/unit_tests/<path>`). So a bug that is
+  reproducible *as a unit test* — a formatter mangling a value, a hook ordering
+  crash, a wrong query parameter — is eligible even though nobody will click
+  through a running Superset. Reserve `missing-repro` for bugs that genuinely
+  need the app up: rendering glitches, drag-and-drop, browser state, anything
+  where the only evidence is a screenshot.
+
+  ## "There is no work here" is a different answer from "decline"
+  Many issues in a backlog this old are already fixed, or duplicates of another
+  issue. Those are the cheapest wins available, so say so explicitly with
+  `decline_reason: already-fixed` or `duplicate` rather than a generic decline —
+  the orchestrator labels them `can-close-issue` and a maintainer retires them
+  without anyone writing code.
+
+  The bar is evidence, not impression. Use these only when you have checked the
+  current state of the code on the default branch, and put what you found in
+  `reasoning`: the file path you read, what it contains now, and the upstream PR
+  or issue that changed it. "Looks fixed" with nothing behind it is worse than no
+  verdict at all — it invites a human to close a live bug on your say-so. If you
+  could not verify, decline with `missing-repro` instead.
 
   ## Confidence
   `confidence` is your probability that a worker session lands a mergeable PR with

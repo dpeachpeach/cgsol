@@ -116,6 +116,24 @@ class DevinClient:
                 return
         await self._client.post(f"/v1/session/{session_id}/message", json={"message": message})
 
+    async def terminate(self, session_id: str) -> bool:
+        """End a session whose result we have already taken.
+
+        Devin parks a finished session at ``waiting_for_user`` indefinitely —
+        it is waiting for a reply that is never coming, because the reader is
+        a state machine. Left alone it holds a worker slot forever, so the
+        pipeline stalls with everything done and nothing free.
+        """
+        org = self._settings.devin_org_id
+        if org:
+            response = await self._client.delete(
+                f"/v3/organizations/{org}/sessions/{_devin_id(session_id)}"
+            )
+            if response.status_code not in _NO_V3_ACCESS:
+                return response.status_code < 300
+        response = await self._client.delete(f"/v1/sessions/{session_id}")
+        return response.status_code < 300
+
     # --- read -----------------------------------------------------------------
 
     async def list_by_tags(self, tags: list[str], limit: int = 100) -> list[SessionInfo]:

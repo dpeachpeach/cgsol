@@ -28,6 +28,9 @@ import httpx
 
 _REDACT_HEADERS = {"authorization", "x-hub-signature-256", "cookie", "set-cookie"}
 _MAX_RECORDED_REQUEST = 400
+#: Replaying these off the recording would contradict the body we are handing
+#: httpx, which recomputes them.
+_DERIVED_HEADERS = {"content-length", "content-encoding", "transfer-encoding"}
 
 
 def _body_hash(content: bytes) -> str:
@@ -115,8 +118,14 @@ class ReplayTransport(httpx.AsyncBaseTransport):
             bucket = self._entries.get(key)
             if not bucket:
                 # Fall back to a body-insensitive match: recorded POST bodies
-                # carry timestamps that will not reproduce byte-for-byte.
-                loose = f"{request.method.upper()} {request.url.host}{request.url.path}?"
+                # carry timestamps that will not reproduce byte-for-byte. The
+                # query stays in the key — a `since=` filter is a different
+                # question with a different answer, and serving the unfiltered
+                # one is worse than admitting the miss.
+                loose = (
+                    f"{request.method.upper()} {request.url.host}{request.url.path}"
+                    f"?{request.url.query.decode()} "
+                )
                 candidates = [k for k in self._entries if k.startswith(loose)]
                 if not candidates:
                     if self._strict:
@@ -132,10 +141,20 @@ class ReplayTransport(httpx.AsyncBaseTransport):
             self._cursor[key] = index + 1
             entry = bucket[index]
         recorded = entry["response"]
+        body = recorded["body"].encode("utf-8")
+        # Headers are part of the answer, not decoration: the client reads its
+        # rate-limit budget and its clock skew off them, and a reply without a
+        # `Date` puts the replay back on the container's clock.
+        headers = {
+            name: value
+            for name, value in recorded["headers"].items()
+            if name.lower() not in _DERIVED_HEADERS
+        }
+        headers.setdefault("content-type", "application/json")
         return httpx.Response(
             status_code=recorded["status"],
-            headers={"content-type": recorded["headers"].get("content-type", "application/json")},
-            content=recorded["body"].encode("utf-8"),
+            headers=headers,
+            content=body,
             request=request,
         )
 

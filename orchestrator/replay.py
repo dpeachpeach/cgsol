@@ -30,6 +30,11 @@ from orchestrator.service import Orchestrator
 #: round cap escalates it, one below the confidence threshold, one declined.
 SNAPSHOT = "fixtures/replay-issues.json"
 
+#: 2026-01-01T00:00:00Z. The sweep asks GitHub for issues touched `since` the
+#: last one, which puts a timestamp in a URL, which puts the wall clock in the
+#: cassette key. A fixed start is what makes the recording replayable.
+EPOCH = 1_767_225_600.0
+
 
 @dataclass(frozen=True)
 class Phase:
@@ -52,7 +57,7 @@ class Phase:
 @asynccontextmanager
 async def replay_run(*, cassette: bool = False) -> AsyncIterator[Orchestrator]:
     """An orchestrator wired to the simulated fork (or to the cassettes)."""
-    from orchestrator.simulator import reset_world
+    from orchestrator.simulator import SimulatedWorld, reset_world
 
     previous = {key: os.environ.get(key) for key in _ENV}
     os.environ.update(
@@ -61,9 +66,14 @@ async def replay_run(*, cassette: bool = False) -> AsyncIterator[Orchestrator]:
             "REPLAY_CASSETTE": "true" if cassette else "false",
             "REPLAY_AUTOSTART": "false",
             "REPLAY_SNAPSHOT": SNAPSHOT,
+            # Off by default on the live path, so the low-confidence lane would
+            # never be walked. The script is the branch coverage, so it turns
+            # the gate on rather than leaving one route to the board untested.
+            "CONFIDENCE_THRESHOLD": "0.6",
         }
     )
     get_settings.cache_clear()
+    SimulatedWorld.set_epoch(EPOCH)
     reset_world()
     orchestrator = Orchestrator()
     try:
@@ -77,10 +87,18 @@ async def replay_run(*, cassette: bool = False) -> AsyncIterator[Orchestrator]:
             else:
                 os.environ[key] = value
         get_settings.cache_clear()
+        SimulatedWorld.set_epoch(None)
         reset_world()
 
 
-_ENV = ("REPLAY", "REPLAY_CASSETTE", "REPLAY_AUTOSTART", "REPLAY_SNAPSHOT", "RECORD")
+_ENV = (
+    "REPLAY",
+    "REPLAY_CASSETTE",
+    "REPLAY_AUTOSTART",
+    "REPLAY_SNAPSHOT",
+    "RECORD",
+    "CONFIDENCE_THRESHOLD",
+)
 
 
 async def run_timeline(orchestrator: Orchestrator) -> list[Phase]:

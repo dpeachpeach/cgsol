@@ -30,6 +30,9 @@ class Store:
         self._lock = asyncio.Lock()
         self.first_sync = asyncio.Event()
         self.started_at = time.time()
+        #: What GitHub last said is left of the hourly budget. Rendered, so an
+        #: hour that is about to run out is visible before the board freezes.
+        self.budget: dict[str, Any] = {}
 
     # --- projection -----------------------------------------------------------
 
@@ -82,6 +85,14 @@ class Store:
             card.checks = checks
             card.last_synced = time.time()
 
+    def retain(self, numbers: set[int]) -> list[int]:
+        """Drop cards for issues a full sweep no longer sees. Deleted, made a
+        discussion, transferred: whatever happened, GitHub is the record."""
+        gone = [number for number in self._cards if number not in numbers]
+        for number in gone:
+            del self._cards[number]
+        return gone
+
     def card(self, number: int) -> IssueCard | None:
         return self._cards.get(number)
 
@@ -118,6 +129,7 @@ class Store:
                 tier.value: len([c for c in self.cards() if c.tier is tier]) for tier in Tier
             },
             "active_sessions": self.active_worker_count(),
+            "budget": self.budget or None,
             "synced_at": time.time(),
         }
 

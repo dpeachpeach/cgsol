@@ -11,6 +11,12 @@ services:
       GITHUB_REPO: ${GITHUB_REPO:-dpeachpeach/superset-cg}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      # Set by `make github-app`; when present the orchestrator mints its own
+      # installation tokens and GITHUB_TOKEN goes unread.
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_APP_INSTALLATION_ID: ${GITHUB_APP_INSTALLATION_ID:-}
       DEVIN_API_KEY: ${DEVIN_API_KEY:-}
       DEVIN_ORG_ID: ${DEVIN_ORG_ID:-}
       PLAYBOOK_TRIAGE_SCOUT: ${PLAYBOOK_TRIAGE_SCOUT:-}

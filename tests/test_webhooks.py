@@ -6,7 +6,14 @@ import asyncio
 import hashlib
 import hmac
 
-from orchestrator.webhooks import Debouncer, DeliveryDedup, is_bot_sender, verify_signature
+from orchestrator.webhooks import (
+    Debouncer,
+    DeliveryDedup,
+    classify_sender,
+    is_bot_sender,
+    is_self_sender,
+    verify_signature,
+)
 
 SECRET = "shhh"
 
@@ -73,3 +80,26 @@ def test_bot_senders_are_filtered() -> None:
     assert is_bot_sender({"sender": {"login": "github-actions[bot]"}}, logins)
     assert not is_bot_sender({"sender": {"login": "dpeachpeach"}}, logins)
     assert not is_bot_sender({}, logins)
+
+
+def test_the_app_is_a_third_identity_not_just_another_bot() -> None:
+    """As a PAT the orchestrator was indistinguishable from the human who minted
+    it; as an App it authors events as `<slug>[bot]`. Both of those are wrong
+    answers on their own — our writes are not human intent, but they are also
+    not inert, because `make seed` files the backlog under our own identity."""
+    logins = ["devin-ai-integration[bot]"]
+    slug_login = "cgsol-orchestrator[bot]"
+
+    def classify(login: str) -> str:
+        return classify_sender({"sender": {"login": login}}, logins, slug_login)
+
+    assert classify(slug_login) == "self"
+    assert classify("devin-ai-integration[bot]") == "bot"
+    assert classify("github-actions[bot]") == "bot"
+    assert classify("dpeachpeach") == "human"
+
+
+def test_without_an_app_slug_nothing_is_self() -> None:
+    """PAT mode cannot tell its own writes apart, and must behave as it did."""
+    assert classify_sender({"sender": {"login": "dpeachpeach"}}, [], "") == "human"
+    assert not is_self_sender({"sender": {"login": "dpeachpeach"}}, "")

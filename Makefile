@@ -30,6 +30,10 @@ down: ## Stop everything.
 seed: ## Labels, then issues, into $$GITHUB_REPO. Idempotent by title.
 	$(UV) run python -m orchestrator.seed
 
+.PHONY: github-app
+github-app: ## Create the GitHub App (identity + webhook + secret); write it to .env.
+	$(UV) run python -m orchestrator.provision
+
 .PHONY: bootstrap
 bootstrap: ## Push devin/ playbooks + knowledge notes; write IDs to .env.
 	$(UV) run python -m orchestrator.bootstrap

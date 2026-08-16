@@ -35,6 +35,11 @@ body: |
   neighbouring code, do not upgrade unrelated dependencies, do not "while I'm here"
   anything. Reviewers judge a trivial PR by whether it is boring.
 
+  **Verification for this tier is CI-only.** No installs beyond the linter, no
+  tests, no bootstrap. A mechanical change that needs a test run to be believed
+  was not mechanical, and the right response to that discovery is to report
+  `larger-than-tiered`, not to start an install on a 1.5-ACU budget.
+
   For dependency bumps: prefer a version published at least 7 days ago, pin the way
   the repo's manifest already pins, and update the lockfile with the repo's own
   package manager rather than by hand.

@@ -25,18 +25,52 @@ safe.
 needs-triage → devin-eligible → devin-working → devin-pr-open → ci-failing ⇄ devin-fixing
                                                              ↘ human-review → done
              ↘ devin-declined                  ↘ devin-blocked
+             ↘ can-close-issue
 ```
+
+`can-close-issue` separates "there is no work here" from "an agent should not do
+this work". A stale backlog is full of issues already fixed upstream or
+duplicated elsewhere; retiring one costs a few minutes of reading and no code,
+which makes it the cheapest thing the pipeline produces. Triage only reaches it
+with evidence — the file it read and what that file contains now — and a human
+still does the closing.
+
+## Triage cadence
+
+When an untriaged issue becomes a scout session is a spend decision, so it is a
+setting rather than a property of the code path:
+
+| mode | behaviour |
+| --- | --- |
+| `auto` | Each arriving issue is triaged on its webhook, coalesced by the batch window. |
+| `chunked` | The untriaged backlog is swept on an interval (`TRIAGE_INTERVAL_SECONDS`, default 30 minutes) — one scout session per sweep instead of one per issue. |
+| `manual` | Nothing runs until someone presses *Triage backlog*. The default. |
+
+The sweep re-derives its candidates from GitHub rather than draining an in-memory
+queue, so issues that arrive while the orchestrator is down are still in the next
+chunk, and switching modes never strands anything.
 
 ## Verification
 
 Devin writes, CI verifies, Devin fixes what CI catches.
 
-Sessions never set up a development environment, never install dependencies
-beyond what the linter for the changed files needs, and never run the test suite.
-The repo's own pipeline is the gate — deliberately, because a maintainer trusts
-CI, not an agent's self-report. Left alone Devin will `npm ci` unprompted, because
-that is what a careful engineer does; the worker playbooks say not to, in those
-words.
+No session ever stands up Superset itself — no app, no database, no container.
+The repo's own pipeline is the gate, deliberately, because a maintainer trusts
+CI and not an agent's self-report.
+
+Whether a session may run *tests* is a tier decision, and a cost decision rather
+than a correctness one, since CI runs them either way:
+
+| tier | local verification |
+| --- | --- |
+| `trivial`, CI autofix | lint the changed files, push. A mechanical change that needs a test run was mis-tiered. |
+| `medium`, `hard` | may install and run **the touched workspace only** — one frontend package under jest, or `tests/unit_tests/<path>` — when a blind fix would plausibly cost a CI round. |
+
+A local pass buys a lower first-attempt failure rate, nothing more; the PR says
+what was run and what it showed. Sessions are capped at two hours of wall clock
+on top of their ACU ceiling, so a slow `npm ci` gets abandoned rather than
+watched. Whether the trade pays is exactly what the first-attempt failure rate
+in the metrics panel is there to answer.
 
 CI autofix is capped at three rounds. A fourth would be an infinite loop with a
 budget attached, so round three escalates to `human-review` with
@@ -84,6 +118,14 @@ Their prompts write labels directly. Devin is a first-class writer to the state
 machine, not a subordinate reporting through this server; the poller discovers
 sessions it never dispatched (`origin: "automation"`) and adopts them.
 
+Three actors write labels, so the receiver has to tell them apart by
+`sender.login`: the human, Devin (`devin-ai-integration[bot]`) and the
+orchestrator itself. As a PAT the orchestrator wore the human's login and was
+indistinguishable from them; as an App it writes as `<app-slug>[bot]`. Both
+identities are treated as "not human intent" — they do not count as human turns
+against the autonomy metric — but our own writes still start triage, because
+`make seed` files the backlog under exactly that identity.
+
 ## Running it
 
 ### Replay (default — no credentials)
@@ -129,10 +171,42 @@ rate limits, and the webhook tunnel. Those need the live path below.
 ### Live
 
 ```bash
-cp .env.example .env    # GITHUB_TOKEN, DEVIN_API_KEY, DEVIN_ORG_ID, SMEE_URL
+cp .env.example .env    # DEVIN_API_KEY, DEVIN_ORG_ID
+make github-app         # creates the GitHub App: identity, webhook, secret, key
 make bootstrap          # push playbooks + knowledge notes, write their IDs back to .env
 make live               # includes the smee tunnel, so nothing to install locally
 ```
+
+#### The GitHub credential
+
+`make github-app` mints a smee channel, serves a page that POSTs a [GitHub App
+manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest),
+exchanges the code GitHub redirects back with for the app's id, private key and
+webhook secret, writes all of it to `.env`, and then waits for the app to be
+installed on the fork so it can record the installation id.
+
+The app is the identity *and* the webhook *and* the webhook secret, which is why
+this replaces three manual acts with one command: no PAT minted in a settings
+page, no webhook created by hand, no secret copied between two browser tabs. At
+runtime the orchestrator signs a 10-minute RS256 JWT with the private key and
+trades it for an installation token that lives an hour and is refreshed before it
+expires — so the standing, never-expiring credential is gone.
+
+**Two clicks remain, and cannot be automated away:**
+
+1. **Create GitHub App** — on the page the manifest is posted to. GitHub requires
+   a human account to own an app.
+2. **Install** — on the app's install page, granting it the fork. GitHub requires
+   the repository owner to consent.
+
+Everything on either side of those two clicks is scripted. If nobody clicks the
+second one, the installation poll gives up after ten minutes and tells you the
+id to paste in; the app itself is already created and its credentials are already
+in `.env`.
+
+`GITHUB_TOKEN` still works and is still the fallback: with no app configured the
+client authenticates with the PAT exactly as before, which is what keeps replay
+and any half-migrated setup running.
 
 `DEVIN_API_KEY` has to belong to a service user with the org-level
 `UseDevinSessions` permission: playbooks, knowledge, dispatch and polling all run

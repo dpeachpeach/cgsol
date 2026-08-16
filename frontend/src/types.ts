@@ -7,6 +7,7 @@ export type State =
   | "devin-fixing"
   | "human-review"
   | "devin-declined"
+  | "can-close-issue"
   | "devin-blocked"
   | "done";
 
@@ -62,11 +63,20 @@ export interface IssueCard {
   session_url?: string;
 }
 
+/** What GitHub last said is left of the hourly REST budget. */
+export interface RateBudget {
+  remaining: number | null;
+  limit: number | null;
+  reserve: number;
+  resets_at: number | null;
+}
+
 export interface Snapshot {
   cards: IssueCard[];
   counts: Record<string, number>;
   tiers: Record<string, number>;
   active_sessions: number;
+  budget: RateBudget | null;
   synced_at: number;
 }
 
@@ -78,6 +88,7 @@ export interface Metrics {
     total_acu: number;
     build_acu: number;
     merged: number;
+    retired: number;
   };
   funnel: Record<string, number>;
   by_tier: Record<
@@ -109,9 +120,12 @@ export interface TriageEstimate {
   issues: number[];
 }
 
+export type TriageMode = "auto" | "chunked" | "manual";
+
 export interface ConfigPayload {
   path: string;
   repo: string;
   remote: Record<string, unknown> | null;
-  effective: Record<string, number>;
+  next_chunk_at: number | null;
+  effective: Record<string, number | string>;
 }

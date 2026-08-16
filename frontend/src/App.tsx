@@ -16,9 +16,30 @@ import { IssueDrawer } from "./components/IssueDrawer";
 import { MetricsPanel } from "./components/MetricsPanel";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { TriageDialog } from "./components/TriageDialog";
-import type { IssueCard, Metrics, Snapshot } from "./types";
+import type { IssueCard, Metrics, RateBudget, Snapshot } from "./types";
 
 type View = "board" | "metrics";
+
+/** The hourly REST budget. An hour about to run out should be visible before
+ * the board stops moving, not afterwards. */
+function BudgetTag({ budget }: { budget: RateBudget }) {
+  if (budget.remaining === null) return null;
+  const thin = budget.remaining <= budget.reserve * 5;
+  const resets = budget.resets_at
+    ? new Date(budget.resets_at * 1000).toLocaleTimeString()
+    : null;
+  return (
+    <Tag
+      minimal
+      round
+      intent={thin ? "warning" : "none"}
+      title={resets ? `GitHub REST budget, resets ${resets}` : undefined}
+    >
+      {budget.remaining.toLocaleString()}
+      {budget.limit === null ? "" : `/${budget.limit.toLocaleString()}`} API
+    </Tag>
+  );
+}
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -61,18 +82,25 @@ export function App() {
     setSnapshot((current) =>
       current === null
         ? current
-        : { ...current, cards: current.cards.map((c) => (c.number === card.number ? card : c)) },
+        : {
+            ...current,
+            cards: current.cards.map((c) =>
+              c.number === card.number ? card : c,
+            ),
+          },
     );
   }, []);
 
-  const syncedAt = snapshot ? new Date(snapshot.synced_at * 1000).toLocaleTimeString() : "—";
+  const syncedAt = snapshot
+    ? new Date(snapshot.synced_at * 1000).toLocaleTimeString()
+    : "—";
 
   return (
     <div className="app">
       <Navbar>
         <Navbar.Group align={Alignment.LEFT}>
-          <Navbar.Heading>
-            <strong>cgsol</strong> <span className="bp5-text-muted">security backlog</span>
+          <Navbar.Heading className="brand">
+            <strong>Superset Control Panel</strong>
           </Navbar.Heading>
           <Navbar.Divider />
           <Tabs
@@ -95,8 +123,14 @@ export function App() {
           <Tag minimal round>
             synced {syncedAt}
           </Tag>
+          {snapshot?.budget ? <BudgetTag budget={snapshot.budget} /> : null}
           <Navbar.Divider />
-          <Button minimal icon="refresh" onClick={() => void refresh()} title="Refresh now" />
+          <Button
+            minimal
+            icon="refresh"
+            onClick={() => void refresh()}
+            title="Refresh now"
+          />
           <Button
             minimal
             icon="predictive-analysis"
@@ -117,8 +151,15 @@ export function App() {
         )}
       </div>
 
-      <IssueDrawer number={selected} onClose={() => setSelected(null)} onChanged={onCardChanged} />
-      <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <IssueDrawer
+        number={selected}
+        onClose={() => setSelected(null)}
+        onChanged={onCardChanged}
+      />
+      <SettingsDialog
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
       <TriageDialog isOpen={triageOpen} onClose={() => setTriageOpen(false)} />
     </div>
   );

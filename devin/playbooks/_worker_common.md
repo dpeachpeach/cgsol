@@ -2,11 +2,15 @@
 
 ## Verification model — read this before anything else
 
-You write the change. **CI verifies it.** If CI fails, a follow-up session fixes
-what CI reported. That division of labour is deliberate: the maintainer of this
-repo trusts their own pipeline, not an agent's self-report.
+You write the change. **CI is the verdict.** If CI fails, a follow-up session
+fixes what CI reported. That division of labour is deliberate: the maintainer of
+this repo trusts their own pipeline, not an agent's self-report. Nothing you run
+locally changes whether a PR is accepted — it only changes how likely CI is to
+come back red.
 
-Therefore:
+So local verification is a cost/benefit call, and the tier makes it for you.
+Your tier section below says whether you may run the touched workspace's tests.
+Where it says you may not, the rules are absolute:
 
 - **Do not set up the development environment.**
 - **Do not install dependencies** beyond what the linter for the changed files
@@ -15,16 +19,22 @@ Therefore:
 - **Do not run the test suite.** Not a subset of it. Not "just the one file".
 - Do not start the app, a database, or a container.
 
-Left alone you would `npm ci` and run the suite, because that is what a careful
-engineer does. Here it is wasted spend: the pipeline runs it for you on every
-push, in a correct environment, and its result is the one that counts.
+The reasoning, so you can apply it where the tier leaves you discretion: a full
+bootstrap costs more than a cheap fix is worth, and CI runs the real thing on
+every push anyway. It pays for itself only when a blind fix would plausibly cost
+two CI rounds.
 
-## What you do instead
+**Wall-clock cap: 2 hours for the whole session, whatever you are doing.** If an
+install or a test run is still going when you are near it, abandon it, push what
+you have, and let CI judge. Never sit watching a dependency install.
+
+## What you do
 
 1. Read enough of the codebase to make a correct, minimal, idiomatic change.
 2. Make the change. Match surrounding conventions. Touch only files the issue
    requires.
-3. Run lint and type checks **on the changed files only**.
+3. Run lint and type checks **on the changed files only**, plus whatever local
+   verification your tier permits.
 4. Commit on a branch named `devin/issue-<ISSUE_NUMBER>-<short-slug>` — the
    orchestrator correlates sessions to issues by this convention as well as by
    session tags, so the name is load-bearing.
@@ -43,4 +53,5 @@ a speculative change. Say plainly which of these applies:
 `needs-approval`. A clean escalation is cheap; a wrong PR is not.
 
 Your ACU ceiling is a containment mechanism, not a target. If you are close to it
-and not close to a PR, that is itself the signal to stop and report.
+and not close to a PR, that is itself the signal to stop and report. Spending it
+on a dependency install rather than on the change is the worst way to hit it.
