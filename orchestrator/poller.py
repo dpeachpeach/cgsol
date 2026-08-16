@@ -206,11 +206,16 @@ class Poller:
                 checks = await self.github.check_runs_for_ref(pr["head"]["sha"])
                 self.store.set_checks(issue.number, checks)
                 await self.dispatcher.evaluate_ci(card, checks, card.pr_merged)
-            # Closing an issue that already reached a terminal state does not
-            # rewrite how it got there: a retired issue closed by a maintainer
-            # is not a merged PR, and counting it as one inflates every headline
-            # that divides by merges.
-            if issue.state == "closed" and card.state not in TERMINAL_STATES:
+            # A close is only this pipeline's outcome if this pipeline was
+            # working the issue. Closing something it never touched is a
+            # maintainer clearing their own backlog, and closing something
+            # already terminal does not rewrite how it got there — count either
+            # as done and every headline that divides by merges inflates.
+            if (
+                issue.state == "closed"
+                and card.state is not None
+                and card.state not in TERMINAL_STATES
+            ):
                 card.state = State.DONE
 
         await self.poll_sessions()

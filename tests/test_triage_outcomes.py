@@ -162,6 +162,37 @@ async def test_an_automation_session_is_adopted_even_if_it_is_already_paused() -
     assert card is not None and card.meta.session_id == "devin-1"
 
 
+class ReconcileGitHub(FakeGitHub):
+    def __init__(self, issues: list[Issue]) -> None:
+        super().__init__()
+        self.issues = issues
+
+    async def list_issues(self, state: str = "all", limit: int = 100) -> list[Issue]:
+        return self.issues
+
+    async def list_open_prs(self) -> list[dict[str, Any]]:
+        return []
+
+    async def find_meta_comment(self, number: int) -> None:
+        return None
+
+
+async def test_closing_an_issue_the_pipeline_never_touched_is_not_a_merge() -> None:
+    """A maintainer clearing their own backlog must not read as pipeline output."""
+    store = Store()
+    issue = Issue.model_validate(
+        {"number": 2, "title": "closed by hand", "labels": [], "state": "closed"}
+    )
+    github = ReconcileGitHub([issue])
+    devin = FakeDevin(scout_session("finished", None))
+    poller = poller_for(devin, store, dispatcher_for(store, github))
+    poller.github = github  # type: ignore[assignment]
+
+    await poller.reconcile()
+    card = store.card(2)
+    assert card is not None and card.state is None
+
+
 async def test_a_waiting_scout_with_nothing_to_say_is_retried_not_written_off() -> None:
     """Waiting is also how a session asks a question mid-flight."""
     store, github = store_with_issue(), FakeGitHub()
