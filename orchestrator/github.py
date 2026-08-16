@@ -405,5 +405,6 @@ def _to_issue(raw: dict[str, Any]) -> Issue:
         labels=[label["name"] for label in raw.get("labels", [])],
         state=raw.get("state", "open"),
         html_url=raw.get("html_url", ""),
+        created_at=raw.get("created_at", ""),
         updated_at=raw.get("updated_at", ""),
     )

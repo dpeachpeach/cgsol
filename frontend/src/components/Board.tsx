@@ -1,9 +1,9 @@
-import { Card, Colors, Icon, Tag } from "@blueprintjs/core";
-import type { CSSProperties } from "react";
+import { Button, Card, Colors, Icon, Tag } from "@blueprintjs/core";
+import { type CSSProperties, useState } from "react";
 
 import type { IssueCard, State } from "../types";
 
-/** Five columns, eleven labels: the label set is the state machine and stays
+/** Four columns, eleven labels: the label set is the state machine and stays
  *  as it is on GitHub, but a column per label spends the width of the board on
  *  transitions that are empty whenever nothing is mid-flight. Each card still
  *  carries its own label, so `ci-failing` is legible without a column of its
@@ -16,17 +16,10 @@ export const COLUMNS: {
   accent: string;
 }[] = [
   {
-    key: "needs-triage",
-    label: "Needs triage",
-    states: [null, "needs-triage"],
+    key: "backlog",
+    label: "Backlog",
+    states: [null, "needs-triage", "devin-eligible"],
     accent: Colors.GRAY1,
-  },
-  {
-    key: "triaged",
-    label: "Triaged",
-    states: ["devin-eligible"],
-    intent: "primary",
-    accent: Colors.BLUE2,
   },
   {
     key: "working",
@@ -38,18 +31,14 @@ export const COLUMNS: {
   {
     key: "human",
     label: "Request human",
-    states: ["human-review", "devin-blocked"],
+    states: ["human-review", "devin-blocked", "devin-declined"],
     intent: "warning",
     accent: Colors.GOLD2,
   },
   {
     key: "ready",
     label: "Ready to close / merge",
-    // Declined sits here rather than under "request human": the pipeline is
-    // finished with it and the only move left is a close. Keeping it out of the
-    // human column stops thirteen "not for an agent" verdicts from burying the
-    // handful that genuinely want a person.
-    states: ["can-close-issue", "done", "devin-declined"],
+    states: ["can-close-issue", "done"],
     intent: "success",
     accent: Colors.GREEN2,
   },
@@ -109,6 +98,68 @@ function since(ts: number): string {
   const seconds = Math.max(0, Math.round(Date.now() / 1000 - ts));
   if (seconds < 60) return `${seconds}s ago`;
   return `${Math.round(seconds / 60)}m ago`;
+}
+
+const UNLABELLED = "unlabelled";
+
+function statusKey(card: IssueCard): string {
+  return card.state ?? UNLABELLED;
+}
+
+/** Filters on the GitHub status, not on the column: the columns are a grouping
+ *  of eleven labels, and the label is the thing a maintainer actually asks
+ *  about ("show me what CI is failing on"). Nothing selected means everything. */
+function BoardFilters({
+  cards,
+  selected,
+  onChange,
+}: {
+  cards: IssueCard[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const counts = new Map<string, number>();
+  for (const card of cards) {
+    const key = statusKey(card);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const order = [UNLABELLED, ...COLUMNS.flatMap((c) => c.states)].filter(
+    (key): key is string => key !== null,
+  );
+  const present = order.filter((key) => counts.has(key));
+
+  const toggle = (key: string) => {
+    const next = new Set(selected);
+    if (!next.delete(key)) next.add(key);
+    onChange(next);
+  };
+
+  return (
+    <div className="board__filters">
+      <span className="bp5-text-muted">Status</span>
+      {present.map((key) => (
+        <Tag
+          key={key}
+          round
+          interactive
+          minimal={!selected.has(key)}
+          intent={selected.has(key) ? "primary" : undefined}
+          onClick={() => toggle(key)}
+        >
+          {(STATE_LABEL[key] ?? key)} {counts.get(key)}
+        </Tag>
+      ))}
+      {selected.size > 0 && (
+        <Button
+          minimal
+          small
+          icon="cross"
+          text="Clear"
+          onClick={() => onChange(new Set())}
+        />
+      )}
+    </div>
+  );
 }
 
 function IssueTile({
@@ -179,28 +230,39 @@ export function Board({
   cards: IssueCard[];
   onSelect: (n: number) => void;
 }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const visible =
+    selected.size === 0
+      ? cards
+      : cards.filter((card) => selected.has(statusKey(card)));
+
   return (
-    <div className="board">
-      {COLUMNS.map((column) => {
-        const items = cards.filter((card) => columnKey(card) === column.key);
-        return (
-          <div
-            className="column"
-            key={column.key}
-            style={{ "--accent": column.accent } as CSSProperties}
-          >
-            <div className="column__head">
-              <span>{column.label}</span>
-              <Tag round intent={column.intent}>
-                {items.length}
-              </Tag>
+    <>
+      <BoardFilters cards={cards} selected={selected} onChange={setSelected} />
+      <div className="board">
+        {COLUMNS.map((column) => {
+          const items = visible.filter(
+            (card) => columnKey(card) === column.key,
+          );
+          return (
+            <div
+              className="column"
+              key={column.key}
+              style={{ "--accent": column.accent } as CSSProperties}
+            >
+              <div className="column__head">
+                <span>{column.label}</span>
+                <Tag round intent={column.intent}>
+                  {items.length}
+                </Tag>
+              </div>
+              {items.map((card) => (
+                <IssueTile key={card.number} card={card} onSelect={onSelect} />
+              ))}
             </div>
-            {items.map((card) => (
-              <IssueTile key={card.number} card={card} onSelect={onSelect} />
-            ))}
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }

@@ -10,6 +10,17 @@ function num(value: number | null, digits = 2): string {
   return value === null ? "—" : value.toFixed(digits);
 }
 
+/** Durations here span minutes to weeks, so a fixed unit is unreadable at one
+ *  end or the other. */
+function duration(seconds: number | null): string {
+  if (seconds === null) return "—";
+  const minutes = seconds / 60;
+  if (minutes < 90) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
 function Metric({
   label,
   value,
@@ -28,7 +39,13 @@ function Metric({
   );
 }
 
-export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
+export function MetricsPanel({
+  metrics,
+  computedAt,
+}: {
+  metrics: Metrics | null;
+  computedAt: number | null;
+}) {
   if (metrics === null) {
     return <NonIdealState icon="chart" title="No metrics yet" />;
   }
@@ -37,6 +54,12 @@ export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="bp5-text-muted" style={{ fontSize: 11 }}>
+        Recomputed every minute
+        {computedAt === null
+          ? ""
+          : ` · last at ${new Date(computedAt).toLocaleTimeString()}`}
+      </div>
       <div className="metrics">
         <Metric
           label="Autonomy rate"
@@ -57,6 +80,16 @@ export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
           label="Retired without code"
           value={String(headline.retired ?? 0)}
           sub="already fixed or duplicate; awaiting a human close"
+        />
+        <Metric
+          label="Issue → PR"
+          value={duration(headline.issue_to_pr_seconds)}
+          sub={`mean over ${headline.issue_to_pr_count} worker PRs`}
+        />
+        <Metric
+          label="Average age, open issues"
+          value={duration(headline.open_age_seconds)}
+          sub={`${headline.open_count} open · since the issue landed on this fork`}
         />
         <Metric
           label="Pipeline ACU"

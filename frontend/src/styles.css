@@ -39,6 +39,14 @@ body {
   padding: var(--gutter);
 }
 
+.board__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: var(--gutter);
+}
+
 .board {
   display: flex;
   gap: var(--gutter);
@@ -48,7 +56,7 @@ body {
 }
 
 .column {
-  /* Five columns share the width rather than scrolling a fixed rail off the
+  /* The columns share the width rather than scrolling a fixed rail off the
      right edge; 268px stays the floor so a narrow window still scrolls. */
   flex: 1 1 268px;
   min-width: 268px;

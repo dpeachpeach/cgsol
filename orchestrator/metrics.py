@@ -15,6 +15,7 @@ from __future__ import annotations
 import time
 from collections import Counter, deque
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from orchestrator.labels import State, Tier
@@ -84,6 +85,17 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _epoch(stamp: str | None) -> float | None:
+    """GitHub's `2026-08-15T23:48:00Z` as seconds. Anything unparseable is a
+    missing measurement rather than a zero, which would read as "instant"."""
+    if not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def compute(
     cards: list[IssueCard],
     sessions: list[SessionInfo],
@@ -140,6 +152,23 @@ def compute(
             "ci_rounds": _mean([float(c.meta.ci_rounds) for c in tier_cards]) or 0.0,
         }
 
+    # Issue opened -> its PR opened, from GitHub's own timestamps rather than
+    # from dispatch, so the figure survives a lost session and a restart. On
+    # this fork `created_at` is when the issue was copied in, not its upstream
+    # age, which is why the dashboard says so next to the number.
+    issue_to_pr: list[float] = []
+    open_ages: list[float] = []
+    now = time.time()
+    for card in cards:
+        created = _epoch(card.created_at)
+        if created is None:
+            continue
+        opened = _epoch(card.meta.pr_opened_at)
+        if opened is not None and opened >= created:
+            issue_to_pr.append(opened - created)
+        if not card.pr_merged and card.state is not State.DONE:
+            open_ages.append(now - created)
+
     escalation_counts = Counter(escalations or {})
     for card in cards:
         if card.meta.escalation:
@@ -154,6 +183,10 @@ def compute(
             "build_acu": round(sum(s.acus_consumed for s in sessions if BUILD_TAG in s.tags), 2),
             "merged": len(merged),
             "retired": len(retired),
+            "issue_to_pr_seconds": _mean(issue_to_pr),
+            "issue_to_pr_count": len(issue_to_pr),
+            "open_age_seconds": _mean(open_ages),
+            "open_count": len(open_ages),
         },
         "funnel": funnel,
         "by_tier": by_tier,

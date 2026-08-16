@@ -47,6 +47,7 @@ class Store:
             self._cards[issue.number] = card
         card.title = issue.title
         card.html_url = issue.html_url
+        card.created_at = issue.created_at or card.created_at
         card.labels = issue.labels
         card.state = state_of(issue.labels)
         card.tier = tier_of(issue.labels)

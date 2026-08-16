@@ -32,6 +32,7 @@ export interface IssueMeta {
   scout_reasoning: string | null;
   suggested_approach: string | null;
   acus: number;
+  pr_opened_at: string | null;
 }
 
 export interface SessionInfo {
@@ -51,6 +52,7 @@ export interface IssueCard {
   number: number;
   title: string;
   html_url: string;
+  created_at: string;
   state: State | null;
   tier: string | null;
   labels: string[];
@@ -89,6 +91,10 @@ export interface Metrics {
     build_acu: number;
     merged: number;
     retired: number;
+    issue_to_pr_seconds: number | null;
+    issue_to_pr_count: number;
+    open_age_seconds: number | null;
+    open_count: number;
   };
   funnel: Record<string, number>;
   by_tier: Record<

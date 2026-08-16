@@ -18,6 +18,7 @@ class Issue(BaseModel):
     labels: list[str] = Field(default_factory=list)
     state: str = "open"
     html_url: str = ""
+    created_at: str = ""
     updated_at: str = ""
     has_linked_pr: bool = False
 
@@ -122,6 +123,10 @@ class IssueMeta(BaseModel):
     scout_reasoning: str | None = None
     suggested_approach: str | None = None
     acus: float = 0.0
+    #: When the PR appeared, as GitHub reports it. Read from the PR rather than
+    #: recorded at dispatch so the figure survives a restart, a lost session, or
+    #: a PR the orchestrator only found later.
+    pr_opened_at: str | None = None
 
 
 class IssueCard(BaseModel):
@@ -130,6 +135,7 @@ class IssueCard(BaseModel):
     number: int
     title: str
     html_url: str
+    created_at: str = ""
     state: State | None = None
     tier: Tier | None = None
     labels: list[str] = Field(default_factory=list)

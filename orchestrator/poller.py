@@ -345,6 +345,7 @@ class Poller:
             return
         card.pr_number = pr["number"]
         card.meta.pr_url = pr["html_url"]
+        card.meta.pr_opened_at = pr.get("created_at") or card.meta.pr_opened_at
         card.pr_merged = bool(pr.get("merged_at"))
         if not card.pr_merged and card.state in PRE_PR_STATES:
             await self.dispatcher.adopt_pr(card, pr)
