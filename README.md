@@ -35,6 +35,21 @@ which makes it the cheapest thing the pipeline produces. Triage only reaches it
 with evidence — the file it read and what that file contains now — and a human
 still does the closing.
 
+## Triage cadence
+
+When an untriaged issue becomes a scout session is a spend decision, so it is a
+setting rather than a property of the code path:
+
+| mode | behaviour |
+| --- | --- |
+| `auto` | Each arriving issue is triaged on its webhook, coalesced by the batch window. |
+| `chunked` | The untriaged backlog is swept on an interval (`TRIAGE_INTERVAL_SECONDS`, default 30 minutes) — one scout session per sweep instead of one per issue. |
+| `manual` | Nothing runs until someone presses *Triage backlog*. The default. |
+
+The sweep re-derives its candidates from GitHub rather than draining an in-memory
+queue, so issues that arrive while the orchestrator is down are still in the next
+chunk, and switching modes never strands anything.
+
 ## Verification
 
 Devin writes, CI verifies, Devin fixes what CI catches.

@@ -111,9 +111,12 @@ export interface TriageEstimate {
   issues: number[];
 }
 
+export type TriageMode = "auto" | "chunked" | "manual";
+
 export interface ConfigPayload {
   path: string;
   repo: string;
   remote: Record<string, unknown> | null;
-  effective: Record<string, number>;
+  next_chunk_at: number | null;
+  effective: Record<string, number | string>;
 }

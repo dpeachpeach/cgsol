@@ -199,7 +199,10 @@ async def api_get_config() -> dict[str, Any]:
         "path": CONFIG_PATH,
         "repo": service.settings.github_repo,
         "remote": yaml.safe_load(remote) if remote else None,
+        "next_chunk_at": service.next_chunk_at,
         "effective": {
+            "triage_mode": service.settings.triage_mode.value,
+            "triage_interval_seconds": service.settings.triage_interval_seconds,
             "confidence_threshold": service.settings.confidence_threshold,
             "max_ci_rounds": service.settings.max_ci_rounds,
             "max_concurrent_workers": service.settings.max_concurrent_workers,
