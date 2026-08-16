@@ -1,0 +1,117 @@
+export type State =
+  | "needs-triage"
+  | "devin-eligible"
+  | "devin-working"
+  | "devin-pr-open"
+  | "ci-failing"
+  | "devin-fixing"
+  | "human-review"
+  | "devin-declined"
+  | "devin-blocked"
+  | "done";
+
+export interface CheckRun {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  details_url: string | null;
+  required: boolean;
+}
+
+export interface IssueMeta {
+  session_id: string | null;
+  tier: string | null;
+  attempt: number;
+  ci_rounds: number;
+  human_turns: number;
+  confidence: number | null;
+  pr_url: string | null;
+  branch: string | null;
+  escalation: string | null;
+  scout_reasoning: string | null;
+  suggested_approach: string | null;
+  acus: number;
+}
+
+export interface SessionInfo {
+  session_id: string;
+  status: string;
+  status_enum: string | null;
+  tags: string[];
+  title: string | null;
+  url: string;
+  pr_url: string | null;
+  acus_consumed: number;
+  origin: string | null;
+  updated_at: string | null;
+}
+
+export interface IssueCard {
+  number: number;
+  title: string;
+  html_url: string;
+  state: State | null;
+  tier: string | null;
+  labels: string[];
+  meta: IssueMeta;
+  session: SessionInfo | null;
+  checks: CheckRun[];
+  pr_number: number | null;
+  pr_merged: boolean;
+  last_synced: number;
+  session_url?: string;
+}
+
+export interface Snapshot {
+  cards: IssueCard[];
+  counts: Record<string, number>;
+  tiers: Record<string, number>;
+  active_sessions: number;
+  synced_at: number;
+}
+
+export interface Metrics {
+  headline: {
+    autonomy_rate: number | null;
+    acu_per_merged_pr: number | null;
+    ci_rounds_to_green: number | null;
+    total_acu: number;
+    build_acu: number;
+    merged: number;
+  };
+  funnel: Record<string, number>;
+  by_tier: Record<
+    string,
+    {
+      issues: number;
+      acu: number;
+      acu_share: number | null;
+      merged: number;
+      merge_rate: number | null;
+      ci_rounds: number;
+    }
+  >;
+  escalations: Record<string, number>;
+  sessions: { active: number; by_role: Record<string, number> };
+  series: {
+    ts: number;
+    autonomy_rate: number | null;
+    acu_per_merged_pr: number | null;
+    ci_rounds_to_green: number | null;
+    open_sessions: number;
+    total_acu: number;
+  }[];
+}
+
+export interface TriageEstimate {
+  issue_count: number;
+  estimated_acu: number;
+  issues: number[];
+}
+
+export interface ConfigPayload {
+  path: string;
+  repo: string;
+  remote: Record<string, unknown> | null;
+  effective: Record<string, number>;
+}

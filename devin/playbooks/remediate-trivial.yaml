@@ -1,0 +1,42 @@
+key: remediate_trivial
+title: "cgsol — Remediate (trivial)"
+macro: "!cgsol-remediate-trivial"
+role: worker
+tier: trivial
+max_acu_limit: 1.5
+includes: [_worker_common.md]
+structured_output_required: true
+structured_output_schema:
+  $schema: "http://json-schema.org/draft-07/schema#"
+  type: object
+  additionalProperties: false
+  required: [outcome, issue_number, summary]
+  properties:
+    outcome: {type: string, enum: [pr-opened, escalated, no-change-needed]}
+    issue_number: {type: integer}
+    pr_url: {type: string}
+    branch: {type: string}
+    files_changed: {type: array, items: {type: string}}
+    summary: {type: string, maxLength: 600}
+    escalation_reason:
+      type: string
+      enum: [ambiguous-requirement, missing-context, larger-than-tiered, needs-approval, none]
+body: |
+  # Remediate — trivial tier
+
+  Lint fixes, dependency bumps, type annotations, dead code, docstrings.
+
+  A trivial-tier task is mechanical by definition. If yours is not — if you find
+  yourself reading a third module to understand the first — it was mis-tiered.
+  Stop and report `larger-than-tiered`. Do not quietly do a medium-tier job on a
+  trivial-tier budget.
+
+  Keep the diff as small as the issue allows. Do not opportunistically reformat
+  neighbouring code, do not upgrade unrelated dependencies, do not "while I'm here"
+  anything. Reviewers judge a trivial PR by whether it is boring.
+
+  For dependency bumps: prefer a version published at least 7 days ago, pin the way
+  the repo's manifest already pins, and update the lockfile with the repo's own
+  package manager rather than by hand.
+
+  Call `provide_structured_output` once, with `is_final=true`, before you finish.

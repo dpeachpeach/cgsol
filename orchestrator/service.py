@@ -1,0 +1,166 @@
+"""Wiring, plus the event side of the state machine."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+import yaml
+
+from orchestrator.config import Settings, get_settings
+from orchestrator.devin import DevinClient
+from orchestrator.dispatch import Dispatcher
+from orchestrator.github import GitHubClient
+from orchestrator.labels import State
+from orchestrator.metrics import MetricsRegistry
+from orchestrator.models import TriageEstimate
+from orchestrator.poller import Poller
+from orchestrator.resources import load_resources
+from orchestrator.state import Store
+from orchestrator.webhooks import Debouncer, DeliveryDedup, is_bot_sender
+
+log = logging.getLogger("cgsol.service")
+
+CONFIG_PATH = ".cgsol/config.yaml"
+
+
+class Orchestrator:
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings or get_settings()
+        self.store = Store()
+        self.metrics = MetricsRegistry()
+        self.resources = load_resources()
+        self.github = GitHubClient(self.settings)
+        self.devin = DevinClient(self.settings)
+        self.dispatcher = Dispatcher(
+            self.settings, self.github, self.devin, self.store, self.resources, self.metrics
+        )
+        self.poller = Poller(
+            self.settings, self.github, self.devin, self.store, self.dispatcher, self.metrics
+        )
+        self.dedup = DeliveryDedup(self.settings.delivery_ttl_seconds)
+        self.debouncer = Debouncer(self.settings.batch_window_seconds, self._flush_batch)
+
+    async def start(self) -> None:
+        await self.poller.start()
+        if self.settings.replay and self.settings.replay_autostart:
+            # Replay has no webhook to react to. Kick the backlog through the
+            # same retroactive-triage path a human would press.
+            asyncio.create_task(self.triage_all())  # noqa: RUF006
+
+    async def stop(self) -> None:
+        await self.poller.stop()
+        await self.github.aclose()
+        await self.devin.aclose()
+
+    # --- events ---------------------------------------------------------------
+
+    async def handle_event(self, event: str, payload: dict[str, Any]) -> str:
+        """Translate a webhook into intent. The poller does the converging."""
+        from_bot = is_bot_sender(payload, self.settings.devin_bot_logins)
+
+        if event == "issues":
+            issue = payload.get("issue") or {}
+            number = issue.get("number")
+            if number is None:
+                return "ignored"
+            action = payload.get("action")
+            if action in {"opened", "reopened", "labeled", "unlabeled", "edited"}:
+                labels = [label["name"] for label in issue.get("labels", [])]
+                if not from_bot and State.NEEDS_TRIAGE.value in labels:
+                    await self.debouncer.add(number)
+                    return "queued"
+                if not from_bot:
+                    self._count_human_turn(number)
+                await self._refresh_issue(number)
+                return "refreshed"
+            if action == "closed":
+                await self._refresh_issue(number)
+                return "refreshed"
+            return "ignored"
+
+        if event == "issue_comment" and not from_bot:
+            number = (payload.get("issue") or {}).get("number")
+            if number is not None:
+                self._count_human_turn(number)
+            return "noted"
+
+        if event in {"check_run", "check_suite", "pull_request", "status", "workflow_run"}:
+            # CI moved. The reconciler owns the evaluation; poke it early rather
+            # than trusting this payload's view of which checks exist.
+            await self.poller.reconcile()
+            return "reconciled"
+
+        if event == "push":
+            if any(
+                commit.get("modified", []) or commit.get("added", [])
+                for commit in payload.get("commits", [])
+                if CONFIG_PATH in (commit.get("modified", []) + commit.get("added", []))
+            ):
+                await self.load_remote_config()
+                return "config-reloaded"
+            return "ignored"
+
+        return "ignored"
+
+    def _count_human_turn(self, number: int) -> None:
+        card = self.store.card(number)
+        if card is not None and card.meta.session_id:
+            card.meta.human_turns += 1
+
+    async def _refresh_issue(self, number: int) -> None:
+        issue = await self.github.get_issue(number)
+        card = self.store.upsert_issue(issue)
+        await self.store.publish("issue.updated", card.model_dump(mode="json"))
+
+    async def _flush_batch(self, numbers: set[int]) -> None:
+        issues = [await self.github.get_issue(number) for number in sorted(numbers)]
+        for issue in issues:
+            self.store.upsert_issue(issue)
+        session_id = await self.dispatcher.triage(issues)
+        log.info("triage batch of %d issues -> %s", len(issues), session_id)
+
+    # --- retroactive / manual -------------------------------------------------
+
+    async def triage_all(self, estimate_only: bool = False) -> TriageEstimate | dict[str, Any]:
+        """The retroactive-triage button routes through the same handler as a
+        webhook — one code path, so the demo cannot drift from the real thing."""
+        issues = await self.github.list_issues(state="open", limit=100)
+        candidates = [
+            issue
+            for issue in issues
+            if State.NEEDS_TRIAGE.value in issue.labels
+            or not any(label in {s.value for s in State} for label in issue.labels)
+        ]
+        if estimate_only:
+            return self.dispatcher.estimate(candidates)
+        for issue in candidates:
+            await self.debouncer.add(issue.number)
+        await self.debouncer.flush_now()
+        return {"queued": [issue.number for issue in candidates]}
+
+    async def load_remote_config(self) -> dict[str, Any]:
+        """Settings live in the fork, not on the orchestrator's disk. Same rule as
+        everything else: no local source of truth."""
+        raw = await self.github.get_file(CONFIG_PATH)
+        if not raw:
+            return {}
+        data = yaml.safe_load(raw) or {}
+        # Explicitly enumerated: remote config controls policy, never credentials
+        # or endpoints. A repo file that could rewrite `devin_api_base` would be
+        # a write-scoped token away from being an exfiltration primitive.
+        if "confidence_threshold" in data:
+            self.settings.confidence_threshold = float(data["confidence_threshold"])
+        if "max_ci_rounds" in data:
+            self.settings.max_ci_rounds = int(data["max_ci_rounds"])
+        if "max_concurrent_workers" in data:
+            self.settings.max_concurrent_workers = int(data["max_concurrent_workers"])
+        if "scout_batch_max" in data:
+            self.settings.scout_batch_max = int(data["scout_batch_max"])
+        if "batch_window_seconds" in data:
+            self.settings.batch_window_seconds = float(data["batch_window_seconds"])
+        if "dry_run" in data:
+            self.settings.dry_run = bool(data["dry_run"])
+        await self.store.publish("config.reloaded", data)
+        return dict(data)

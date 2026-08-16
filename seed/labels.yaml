@@ -1,0 +1,28 @@
+# Applied by `make seed` BEFORE issues are filed.
+pipeline:
+  - {name: needs-triage,   color: D4D4D4, description: "Imported, not yet assessed. Entry state."}
+  - {name: devin-eligible, color: 1D76DB, description: "Triaged as agent-solvable. Ready to hand to Devin."}
+  - {name: devin-declined, color: 6E7781, description: "Triaged as NOT agent-solvable. Terminal."}
+  - {name: devin-working,  color: 0052CC, description: "Devin has picked it up and is actively working."}
+  - {name: devin-blocked,  color: B60205, description: "Devin stopped. Needs a human."}
+  - {name: devin-pr-open,  color: 5319E7, description: "Devin opened a PR against THIS repo. Awaiting CI."}
+  - {name: ci-failing,     color: D93F0B, description: "CI red on the open PR. Pairs with devin-fixing."}
+  - {name: devin-fixing,   color: FBCA04, description: "Devin iterating on a red CI run. Returns to devin-pr-open."}
+  - {name: human-review,   color: BFD4F2, description: "CI green. Waiting on human review."}
+  - {name: done,           color: 0E8A16, description: "Merged and closed. Terminal."}
+tier:
+  - {name: "tier:trivial", color: C5DEF5, description: "Lint, dep bumps, type annotations. max_acu_limit 1.5"}
+  - {name: "tier:medium",  color: 7B9FD4, description: "Test coverage, small refactors. max_acu_limit 3"}
+  - {name: "tier:hard",    color: 3B5FA0, description: "Behavior fixes. max_acu_limit 5"}
+# Why a human was needed. Applied alongside human-review / devin-blocked, never
+# alone: an escalation with no reason is a dead end, an escalation with a reason
+# is the input to the next knowledge-note revision.
+escalation:
+  - {name: "escalation:ambiguous-requirement", color: E99695, description: "The issue does not say what correct looks like."}
+  - {name: "escalation:missing-context",       color: E99695, description: "Needs information not in the repo or the issue."}
+  - {name: "escalation:needs-approval",        color: E99695, description: "Requires a product, security, or design decision."}
+  - {name: "escalation:larger-than-tiered",    color: E99695, description: "Real scope exceeds the tier it was dispatched at."}
+  - {name: "escalation:ci-unfixable",          color: E99695, description: "CI still red after the autofix round limit."}
+  - {name: "escalation:acu-exhausted",         color: E99695, description: "Hit the session ACU ceiling before finishing."}
+  - {name: "escalation:session-error",         color: E99695, description: "Session ended without a usable result."}
+  - {name: "escalation:low-confidence",        color: E99695, description: "Triage confidence below the dispatch threshold."}

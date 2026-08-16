@@ -1,1 +1,134 @@
 # cgsol
+
+An agent-run pipeline for the backlog nobody gets staffed to: the lint, dependency
+and small-fix issues that are individually below the cut line and collectively a
+nonzero risk. Issues go in; reviewed pull requests come out, or an explicit
+decline with reasoning.
+
+**Just want to see it work?** `make up` — no credentials needed, replays a
+recorded run at http://localhost:5173.
+
+---
+
+## The thesis
+
+GitHub is the bus. The orchestrator, Devin and the human are peers on it.
+
+Labels are the state. The metadata blob on the issue is the join. There is no
+database, and nothing in this repo is authoritative: kill the orchestrator, start
+it again, and it rebuilds its whole world from two API calls in about two seconds.
+Three actors write labels concurrently and the state machine is idempotent on the
+*current* state rather than on the event that woke it up, which is what makes that
+safe.
+
+```text
+needs-triage → devin-eligible → devin-working → devin-pr-open → ci-failing ⇄ devin-fixing
+                                                             ↘ human-review → done
+             ↘ devin-declined                  ↘ devin-blocked
+```
+
+## Verification
+
+Devin writes, CI verifies, Devin fixes what CI catches.
+
+Sessions never set up a development environment, never install dependencies
+beyond what the linter for the changed files needs, and never run the test suite.
+The repo's own pipeline is the gate — deliberately, because a maintainer trusts
+CI, not an agent's self-report. Left alone Devin will `npm ci` unprompted, because
+that is what a careful engineer does; the worker playbooks say not to, in those
+words.
+
+CI autofix is capped at three rounds. A fourth would be an infinite loop with a
+budget attached, so round three escalates to `human-review` with
+`escalation:ci-unfixable` and the count is kept.
+
+## Cost containment
+
+| session | ceiling |
+| --- | --- |
+| triage scout (read-only, one per batch) | 3 ACU |
+| trivial worker | 1.5 ACU |
+| medium worker | 3 ACU |
+| hard worker | 5 ACU |
+| CI autofix | 2 ACU |
+
+Tight ceilings are failure containment, not thrift: a lint-and-push task burning
+3 ACU means something is wrong and you want it stopped rather than finished.
+
+## Layout
+
+```text
+devin/playbooks/      agent instructions, versioned — they go through PR review like code
+devin/knowledge/      repo conventions pushed to the Devin account by `make bootstrap`
+devin/automations/    the three places one event maps to exactly one session
+orchestrator/         FastAPI: webhooks, state machine, dispatch, poller, reconciler, metrics
+frontend/             Vite + React + Blueprint; reads the orchestrator over SSE, nothing else
+seed/                 the corpus and the labels that produced the fork's backlog
+fixtures/             recorded traffic + the issue snapshot replay runs against
+```
+
+## Orchestration vs. Automations
+
+Automations are right when one event maps to one session. Triage has a decision
+layer in between — not every issue should get a session — so it lives in the
+orchestrator, along with tier selection, the confidence threshold, concurrency and
+budget. Where there is no branch point, there is an Automation:
+
+| Automation | Trigger |
+| --- | --- |
+| CI autofix | a check fails on `devin/*` |
+| PR review | Devin opens a PR |
+| Dependency scan | weekly cron, `pip-audit` / `npm audit` → issues |
+
+Their prompts write labels directly. Devin is a first-class writer to the state
+machine, not a subordinate reporting through this server; the poller discovers
+sessions it never dispatched (`origin: "automation"`) and adopts them.
+
+## Running it
+
+### Replay (default — no credentials)
+
+```bash
+make up          # http://localhost:5173
+```
+
+Everything that distinguishes replay from live lives at the socket, in
+`orchestrator/transport.py`. Above that line the clients, the reconciler and the
+state machine cannot tell the difference, which is the only thing that makes a
+replay worth having as a test.
+
+### Live
+
+```bash
+cp .env.example .env    # GITHUB_TOKEN, DEVIN_API_KEY, DEVIN_ORG_ID, SMEE_URL
+make bootstrap          # push playbooks + knowledge notes, write their IDs back to .env
+make live               # includes the smee tunnel, so nothing to install locally
+```
+
+`make seed` files the corpus into a fresh fork. The fork this was demonstrated on
+is already seeded; the script exists so the setup is reproducible, and
+`seed/issues.yaml` doubles as the answer key replay scores triage against.
+
+### Other targets
+
+```bash
+make simulate    # signed webhook deliveries, sent twice each, at a running receiver
+make automations # render devin/automations/*.yaml for review before applying
+make check       # ruff, mypy, pytest, tsc, eslint
+```
+
+## Measuring it
+
+Status is not effectiveness. The board is status; the metrics tab answers "how
+would I know this is working":
+
+- **autonomy rate** — merged PRs that needed zero human turns
+- **ACU per merged PR**, trended
+- **CI rounds to green** — first-pass quality, and the number that should fall as
+  the playbooks get tuned
+- funnel from ingested to merged, and spend-by-tier next to merge-rate-by-tier: if
+  hard tier burns 60% of the budget for a 30% merge rate, that is a finding
+- escalation taxonomy, which is the input to the next round of knowledge notes
+
+Sessions that built this system are tagged separately from sessions the pipeline
+dispatched, so the burn-down is not dominated by "building the thing".

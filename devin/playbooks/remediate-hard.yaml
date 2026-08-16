@@ -1,0 +1,42 @@
+key: remediate_hard
+title: "cgsol — Remediate (hard)"
+macro: "!cgsol-remediate-hard"
+role: worker
+tier: hard
+max_acu_limit: 5
+includes: [_worker_common.md]
+structured_output_required: true
+structured_output_schema:
+  $schema: "http://json-schema.org/draft-07/schema#"
+  type: object
+  additionalProperties: false
+  required: [outcome, issue_number, summary]
+  properties:
+    outcome: {type: string, enum: [pr-opened, escalated, no-change-needed]}
+    issue_number: {type: integer}
+    pr_url: {type: string}
+    branch: {type: string}
+    files_changed: {type: array, items: {type: string}}
+    summary: {type: string, maxLength: 600}
+    escalation_reason:
+      type: string
+      enum: [ambiguous-requirement, missing-context, larger-than-tiered, needs-approval, none]
+body: |
+  # Remediate — hard tier
+
+  Behavior fixes: the desired behavior is unambiguous, but establishing it requires
+  reading several modules and reasoning about runtime semantics.
+
+  Because you cannot run the code, your leverage is reading. Before you edit, write
+  down — in the PR body, for the reviewer — the causal chain you believe produces
+  the reported behavior, and which line breaks it. If you cannot write that chain,
+  you do not understand the bug yet, and the honest move is to report
+  `missing-context` rather than to pattern-match a plausible-looking patch.
+
+  Add a regression test that would fail before your change. You will not see it
+  fail; CI will. State in the PR what you expect CI to show.
+
+  Prefer the smallest fix at the correct layer over a larger fix at a convenient
+  one. If the correct layer is out of the issue's scope, say so and escalate.
+
+  Call `provide_structured_output` once, with `is_final=true`, before you finish.
