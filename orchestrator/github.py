@@ -7,6 +7,7 @@ import base64
 import json
 import logging
 import re
+import time
 from typing import Any
 
 import httpx
@@ -19,6 +20,11 @@ from orchestrator.resources import load_label_definitions
 from orchestrator.transport import build_transport
 
 log = logging.getLogger("cgsol.github")
+
+#: Requests held back from the hourly budget so a write can still land after a
+#: polling loop has been greedy. A stale board recovers on the next sweep; a
+#: dropped label transition does not recover at all.
+WRITE_RESERVE = 100
 
 META_MARKER = "devin-orchestrator:"
 META_RE = re.compile(r"<!--\s*devin-orchestrator:\s*(\{.*?\})\s*-->", re.DOTALL)
@@ -37,6 +43,14 @@ def parse_meta(text: str) -> IssueMeta | None:
         return IssueMeta.model_validate(json.loads(match.group(1)))
     except (ValueError, TypeError):
         return None
+
+
+class RateLimited(RuntimeError):
+    """The hourly budget is spent. Carries when it comes back."""
+
+    def __init__(self, resets_at: float) -> None:
+        self.resets_at = resets_at
+        super().__init__(f"github rate limit exhausted; resets in {resets_at - time.time():.0f}s")
 
 
 class GitHubClient:
@@ -60,22 +74,75 @@ class GitHubClient:
         )
         self._repo = settings.github_repo
         self._write_lock = asyncio.Semaphore(4)
+        # A conditional GET answered 304 is not charged to the hourly budget,
+        # which is what makes polling a repo every minute affordable at all.
+        self._etags: dict[str, tuple[str, bytes]] = {}
+        self._remaining: int | None = None
+        self._resets_at: float = 0.0
 
     async def aclose(self) -> None:
         await self._client.aclose()
         if self._tokens is not None:
             await self._tokens.aclose()
 
+    @property
+    def rate_limited_until(self) -> float:
+        """Zero while there is budget left, otherwise when it comes back."""
+        if self._remaining is not None and self._remaining <= 0 and self._resets_at > time.time():
+            return self._resets_at
+        return 0.0
+
+    @staticmethod
+    def _cache_key(path: str, params: Any) -> str:
+        return f"{path}?{sorted((params or {}).items())}"
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        read = method.upper() == "GET"
+        budget = WRITE_RESERVE + 1 if self._remaining is None else self._remaining
+        if self._resets_at > time.time() and (budget <= 0 or (read and budget <= WRITE_RESERVE)):
+            raise RateLimited(self._resets_at)
+
+        headers = dict(kwargs.pop("headers", None) or {})
         if self._tokens is not None:
-            headers = dict(kwargs.pop("headers", None) or {})
             headers["Authorization"] = f"Bearer {await self._tokens.token()}"
+        key = self._cache_key(path, kwargs.get("params"))
+        cached = self._etags.get(key) if read else None
+        if cached is not None:
+            headers["If-None-Match"] = cached[0]
+        if headers:
             kwargs["headers"] = headers
+
         response = await self._client.request(method, path, **kwargs)
+        self._note_limits(response)
         if response.status_code == 403 and "secondary rate limit" in response.text.lower():
             await asyncio.sleep(5)
             response = await self._client.request(method, path, **kwargs)
+            self._note_limits(response)
+        if response.status_code == 403 and self.rate_limited_until:
+            # A fresh process learns the budget is gone by being told so once.
+            raise RateLimited(self._resets_at)
+        if read and response.status_code == 304 and cached is not None:
+            return httpx.Response(200, content=cached[1], request=response.request)
+        etag = response.headers.get("etag")
+        if read and response.status_code == 200 and etag:
+            self._etags[key] = (etag, response.content)
         return response
+
+    def _note_limits(self, response: httpx.Response) -> None:
+        remaining = response.headers.get("x-ratelimit-remaining")
+        reset = response.headers.get("x-ratelimit-reset")
+        if remaining is None or reset is None:
+            return
+        try:
+            self._remaining, self._resets_at = int(remaining), float(reset)
+        except ValueError:
+            return
+        if self._remaining <= WRITE_RESERVE:
+            log.warning(
+                "github budget low: %s left, resets in %.0fs",
+                self._remaining,
+                self._resets_at - time.time(),
+            )
 
     # --- reads ----------------------------------------------------------------
 

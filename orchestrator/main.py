@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -25,6 +26,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from orchestrator.config import get_settings
+from orchestrator.github import RateLimited
 from orchestrator.labels import State
 from orchestrator.metrics import compute
 from orchestrator.models import TriageEstimate
@@ -62,6 +64,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RateLimited)
+async def _rate_limited(request: Request, exc: RateLimited) -> JSONResponse:
+    """Say when the budget returns rather than failing as though broken."""
+    return JSONResponse(
+        {"detail": str(exc), "resets_at": exc.resets_at},
+        status_code=503,
+        headers={"Retry-After": str(max(1, int(exc.resets_at - time.time())))},
+    )
 
 
 # --- health -------------------------------------------------------------------
