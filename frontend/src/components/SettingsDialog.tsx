@@ -41,7 +41,10 @@ const ADVANCED: {
   {
     key: "max_concurrent_workers",
     label: "Max concurrent workers",
-    min: 1,
+    // Zero is the stop button. A floor of one would mean the dialog could start
+    // spending but never stop it, which is the wrong asymmetry for the control
+    // that governs cost.
+    min: 0,
     max: 20,
     step: 1,
   },
