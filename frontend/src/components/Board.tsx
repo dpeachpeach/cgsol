@@ -22,13 +22,22 @@ export const COLUMNS: {
   {
     key: "backlog",
     label: "Backlog",
-    states: [null, "needs-triage", "devin-eligible"],
+    states: [null, "needs-triage"],
     accent: Colors.GRAY1,
   },
   {
     key: "working",
     label: "Devin working",
-    states: ["devin-working", "devin-pr-open", "ci-failing", "devin-fixing"],
+    // `devin-eligible` sits here rather than in the backlog: triage is done
+    // with it, and what a maintainer wants to see is the whole post-triage
+    // pipeline in one column, including the part waiting on capacity.
+    states: [
+      "devin-eligible",
+      "devin-working",
+      "devin-pr-open",
+      "ci-failing",
+      "devin-fixing",
+    ],
     intent: "primary",
     accent: Colors.INDIGO2,
   },
@@ -203,10 +212,16 @@ function IssueTile({
         <strong>#{card.number}</strong> {card.title}
       </div>
       <div className="card__meta">
-        {card.state && (
-          <Tag round minimal intent={STATE_INTENT[card.state]}>
-            {STATE_LABEL[card.state] ?? card.state}
+        {card.pickup_status === "awaiting-devin" ? (
+          <Tag round minimal intent="warning" icon="time">
+            awaiting Devin pickup
           </Tag>
+        ) : (
+          card.state && (
+            <Tag round minimal intent={STATE_INTENT[card.state]}>
+              {STATE_LABEL[card.state] ?? card.state}
+            </Tag>
+          )
         )}
         {card.tier && (
           <Tag round intent={TIER_INTENT[card.tier]}>

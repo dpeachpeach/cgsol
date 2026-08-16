@@ -66,6 +66,8 @@ export interface IssueCard {
   pr_number: number | null;
   pr_merged: boolean;
   ready_to_merge: boolean;
+  /** Derived from the state and the live session, never a GitHub label. */
+  pickup_status: "awaiting-devin" | null;
   last_synced: number;
   session_url?: string;
 }

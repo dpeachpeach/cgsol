@@ -182,6 +182,22 @@ class IssueCard(BaseModel):
     ready_to_merge: bool = False
     last_synced: float = 0.0
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def pickup_status(self) -> str | None:
+        """Triaged, and waiting for a worker that has not started.
+
+        Derived, and deliberately not a label: it says something about this
+        process's capacity rather than about the issue, so writing it to GitHub
+        would put an operating detail into the durable record. `devin-eligible`
+        with no live session is the whole definition.
+        """
+        if self.state is not State.DEVIN_ELIGIBLE:
+            return None
+        if self.session is not None and not self.session.terminal:
+            return None
+        return "awaiting-devin"
+
 
 class CheckRun(BaseModel):
     name: str
