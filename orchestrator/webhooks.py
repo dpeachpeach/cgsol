@@ -3,6 +3,14 @@
 The sender filter is not a nicety. Devin writes labels too, and so does this
 server; without filtering on `sender.login` the state machine feeds its own
 events back to itself and the first triage batch never stops.
+
+Three identities, not two, once the orchestrator authenticates as a GitHub App:
+the human, Devin (`devin-ai-integration[bot]`) and the orchestrator itself
+(`<app-slug>[bot]`). Under a PAT the orchestrator was indistinguishable from the
+human who minted it; as an App it is a bot like any other, which a blanket
+"anything ending in [bot] is not a human" test would silently over-filter — the
+seeded backlog is labelled `needs-triage` by *us*, and a filter that drops our
+own label writes drops the event that starts the whole pipeline.
 """
 
 from __future__ import annotations
@@ -79,10 +87,35 @@ class Debouncer:
         return set(self._pending)
 
 
+def sender_login(payload: dict[str, Any]) -> str:
+    return str((payload.get("sender") or {}).get("login", ""))
+
+
 def is_bot_sender(payload: dict[str, Any], bot_logins: list[str]) -> bool:
-    sender = (payload.get("sender") or {}).get("login", "")
+    sender = sender_login(payload)
     if not sender:
         return False
     if sender in bot_logins:
         return True
     return sender.endswith("[bot]")
+
+
+def is_self_sender(payload: dict[str, Any], self_login: str) -> bool:
+    """Was this event authored by the orchestrator's own GitHub App identity?
+
+    Empty `self_login` (PAT mode) means we cannot tell, and answering "no" keeps
+    the pre-App behaviour exactly.
+    """
+    return bool(self_login) and sender_login(payload) == self_login
+
+
+def classify_sender(payload: dict[str, Any], bot_logins: list[str], self_login: str) -> str:
+    """ "self" | "bot" | "human". Callers want different answers per event:
+    our own writes must not count as human intent, but they must still be able
+    to start triage, and only Devin's and third parties' writes are inert.
+    """
+    if is_self_sender(payload, self_login):
+        return "self"
+    if is_bot_sender(payload, bot_logins):
+        return "bot"
+    return "human"

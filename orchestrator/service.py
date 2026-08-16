@@ -20,7 +20,7 @@ from orchestrator.models import TriageEstimate
 from orchestrator.poller import Poller
 from orchestrator.resources import load_resources
 from orchestrator.state import Store
-from orchestrator.webhooks import Debouncer, DeliveryDedup, is_bot_sender
+from orchestrator.webhooks import Debouncer, DeliveryDedup, classify_sender
 
 log = logging.getLogger("cgsol.service")
 
@@ -64,7 +64,16 @@ class Orchestrator:
 
     async def handle_event(self, event: str, payload: dict[str, Any]) -> str:
         """Translate a webhook into intent. The poller does the converging."""
-        from_bot = is_bot_sender(payload, self.settings.devin_bot_logins)
+        # Three identities: "self" is this orchestrator (a PAT's human login, or
+        # `<app-slug>[bot]` once it authenticates as an App), "bot" is Devin and
+        # anything else automated, "human" is intent. Self-authored events are
+        # not human intent, but they still start triage: `make seed` files the
+        # backlog under our own identity.
+        origin = classify_sender(
+            payload, self.settings.devin_bot_logins, self.settings.github_app_login
+        )
+        from_bot = origin == "bot"
+        from_human = origin == "human"
 
         if event == "issues":
             issue = payload.get("issue") or {}
@@ -85,7 +94,7 @@ class Orchestrator:
                         return "queued"
                     await self._refresh_issue(number)
                     return "deferred"
-                if not from_bot:
+                if from_human:
                     self._count_human_turn(number)
                 await self._refresh_issue(number)
                 return "refreshed"
@@ -94,7 +103,7 @@ class Orchestrator:
                 return "refreshed"
             return "ignored"
 
-        if event == "issue_comment" and not from_bot:
+        if event == "issue_comment" and from_human:
             number = (payload.get("issue") or {}).get("number")
             if number is not None:
                 self._count_human_turn(number)

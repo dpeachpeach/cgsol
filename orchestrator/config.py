@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from enum import Enum
 from functools import lru_cache
 
@@ -30,6 +32,22 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_webhook_secret: str = ""
     github_api_url: str = "https://api.github.com"
+    #: The tunnel GitHub delivers to. `make github-app` mints one when unset.
+    smee_url: str = ""
+
+    # --- GitHub App -----------------------------------------------------------
+    # Written by `make github-app`. When these are set the orchestrator mints
+    # short-lived installation tokens for itself and `github_token` is unused;
+    # when they are not, the PAT is still the credential.
+    github_app_id: str = ""
+    github_app_slug: str = ""
+    #: The PEM, base64-encoded so it survives a single .env line. A literal or
+    #: \n-escaped PEM is accepted too, for a key pasted in by hand.
+    github_app_private_key: str = ""
+    github_app_installation_id: str = ""
+    #: Refresh this many seconds before the installation token actually expires;
+    #: a token that dies mid-request costs a retry and a confusing 401 in a log.
+    github_app_token_skew_seconds: float = 300
 
     # Logins whose label writes must never be treated as human intent. Devin
     # writes labels too; without this filter the state machine feeds itself.
@@ -102,6 +120,31 @@ class Settings(BaseSettings):
             self.devin_api_key = self.devin_api_key or "replay"
             self.devin_org_id = self.devin_org_id or "org-replay"
         return self
+
+    @property
+    def github_app_configured(self) -> bool:
+        return bool(self.github_app_id and self.github_app_private_key)
+
+    @property
+    def github_app_login(self) -> str:
+        """How the App authors events. An App's writes arrive as `<slug>[bot]`,
+        which is a different sender from the PAT's human login."""
+        return f"{self.github_app_slug}[bot]" if self.github_app_slug else ""
+
+    @property
+    def github_app_private_key_pem(self) -> str:
+        """The PEM, however it was stored. Never log the result."""
+        raw = self.github_app_private_key.strip()
+        if not raw:
+            return ""
+        if "-----BEGIN" in raw:
+            decoded = raw.replace("\\n", "\n")
+        else:
+            try:
+                decoded = base64.b64decode(raw, validate=True).decode()
+            except (binascii.Error, UnicodeDecodeError) as exc:
+                raise ValueError("GITHUB_APP_PRIVATE_KEY is neither a PEM nor base64") from exc
+        return decoded if decoded.endswith("\n") else decoded + "\n"
 
     @property
     def repo_owner(self) -> str:

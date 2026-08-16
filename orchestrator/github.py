@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from orchestrator.appauth import InstallationTokenProvider, build_token_provider
 from orchestrator.config import Settings
 from orchestrator.labels import ALL_STATE_LABELS, State
 from orchestrator.models import CheckRun, Issue, IssueMeta
@@ -39,14 +40,17 @@ def parse_meta(text: str) -> IssueMeta | None:
 
 
 class GitHubClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, tokens: InstallationTokenProvider | None = None) -> None:
         self._settings = settings
+        # An app mints a fresh installation token per hour, so its Authorization
+        # header cannot be baked into the client; a PAT's can.
+        self._tokens = tokens if tokens is not None else build_token_provider(settings)
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "cgsol-orchestrator",
         }
-        if settings.github_token:
+        if self._tokens is None and settings.github_token:
             headers["Authorization"] = f"Bearer {settings.github_token}"
         self._client = httpx.AsyncClient(
             base_url=settings.github_api_url,
@@ -59,8 +63,14 @@ class GitHubClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        if self._tokens is not None:
+            await self._tokens.aclose()
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        if self._tokens is not None:
+            headers = dict(kwargs.pop("headers", None) or {})
+            headers["Authorization"] = f"Bearer {await self._tokens.token()}"
+            kwargs["headers"] = headers
         response = await self._client.request(method, path, **kwargs)
         if response.status_code == 403 and "secondary rate limit" in response.text.lower():
             await asyncio.sleep(5)
