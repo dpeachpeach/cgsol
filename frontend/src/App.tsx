@@ -56,17 +56,26 @@ export function App() {
   const [connected, setConnected] = useState(false);
   const [metricsAt, setMetricsAt] = useState<number | null>(null);
   const inflight = useRef(false);
+  const [sweeping, setSweeping] = useState(false);
 
-  const refresh = useCallback(async () => {
+  /** `sweep` re-reads GitHub first. Events already carry fresh state, so they
+   *  read the projection; the button does not, because a person presses it
+   *  precisely when they believe the projection is behind. */
+  const refresh = useCallback(async (sweep = false) => {
     if (inflight.current) return;
     inflight.current = true;
+    if (sweep) setSweeping(true);
     try {
-      const [state, computed] = await Promise.all([api.state(), api.metrics()]);
+      const [state, computed] = await Promise.all([
+        sweep ? api.reconcile() : api.state(),
+        api.metrics(),
+      ]);
       setSnapshot(state);
       setMetrics(computed);
       setMetricsAt(Date.now());
     } finally {
       inflight.current = false;
+      setSweeping(false);
     }
   }, []);
 
@@ -145,8 +154,9 @@ export function App() {
           <Button
             minimal
             icon="refresh"
-            onClick={() => void refresh()}
-            title="Refresh now"
+            loading={sweeping}
+            onClick={() => void refresh(true)}
+            title="Sync with GitHub now"
           />
           <Button
             minimal

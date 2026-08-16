@@ -73,6 +73,9 @@ class Poller:
         #: On GitHub's clock, from the sweep that read it.
         self._swept_through: float | None = None
         self._last_full_sweep: float = 0.0
+        #: Two sweeps at once would read GitHub twice and race on `_swept_through`,
+        #: so a caller who asks while one is running waits for it instead.
+        self._sweeping = asyncio.Lock()
 
     # --- lifecycle ------------------------------------------------------------
 
@@ -283,6 +286,10 @@ class Poller:
         A periodic full sweep still runs, because `since` cannot report what is
         no longer there, and an issue the projection never saw is not 'touched'.
         """
+        async with self._sweeping:
+            await self._reconcile(full)
+
+    async def _reconcile(self, full: bool | None) -> None:
         full = self._full_sweep_due() if full is None else full
         # Read the clock before the request, not after: anything that changes
         # while it is in flight has to fall inside the next window.

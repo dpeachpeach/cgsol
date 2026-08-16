@@ -207,6 +207,21 @@ async def api_set_state(number: int, change: StateChange) -> dict[str, Any]:
     return card.model_dump(mode="json")
 
 
+@app.post("/api/reconcile")
+async def api_reconcile() -> dict[str, Any]:
+    """Sweep GitHub now, rather than telling the caller what the last sweep saw.
+
+    The dashboard's refresh button used to re-read the projection, which is
+    exactly as stale as the projection is: a label changed on GitHub stayed
+    invisible for up to a reconcile interval no matter how often it was
+    pressed. An incremental sweep is a couple of reads and answers the question
+    the button appears to ask.
+    """
+    service = get_orchestrator()
+    await service.poller.reconcile()
+    return service.store.snapshot()
+
+
 @app.post("/api/triage")
 async def api_triage(estimate: bool = False) -> dict[str, Any]:
     service = get_orchestrator()

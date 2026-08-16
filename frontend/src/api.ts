@@ -23,6 +23,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ state }),
     }),
+  /** Sweeps GitHub and returns the projection built from it, not the one the
+   *  last sweep left behind. */
+  reconcile: () => json<Snapshot>("/api/reconcile", { method: "POST" }),
   // Same handler the webhook path uses — the button is not a second code path.
   estimateTriage: () => json<TriageEstimate>("/api/triage?estimate=true", { method: "POST" }),
   triage: () => json<{ queued: number[] }>("/api/triage", { method: "POST" }),

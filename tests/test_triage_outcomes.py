@@ -6,6 +6,7 @@ say-so, so both are worth pinning down.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -134,6 +135,7 @@ def poller_for(devin: FakeDevin, store: Store, dispatcher: Dispatcher) -> Poller
     poller._consumed = set()
     poller._swept_through = None
     poller._last_full_sweep = 0.0
+    poller._sweeping = asyncio.Lock()
     return poller
 
 
