@@ -4,6 +4,12 @@ services:
   orchestrator:
     build:
       context: .
+    # Everything in .env, not just the keys enumerated below: a setting that is
+    # set and silently ignored is worse than one that is missing. `.env` is how
+    # `MAX_CONCURRENT_WORKERS=0` — the only brake on spending — is expressed.
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Replay is the default so `make up` needs no credentials at all.
       REPLAY: ${REPLAY:-true}
