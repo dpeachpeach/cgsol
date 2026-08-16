@@ -73,6 +73,21 @@ async def test_reads_stand_down_before_writes_do() -> None:
     assert calls == ["GET", "POST"]
 
 
+async def test_a_cold_process_learns_the_budget_is_gone_from_the_403() -> None:
+    """A restart has no counter yet, so the first request goes out and comes
+    back 403. It has to surface as a rate limit, not a generic HTTP error, or
+    startup treats an hour of thin budget as an hour of downtime."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403, json={"message": "API rate limit exceeded"}, headers=limits(0, resets_in=300)
+        )
+
+    client = client_with(httpx.MockTransport(handle))
+    with pytest.raises(RateLimited):
+        await client.list_issues()
+
+
 async def test_an_exhausted_budget_stops_everything_and_says_when_it_returns() -> None:
     def handle(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[], headers=limits(0, resets_in=600))

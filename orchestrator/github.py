@@ -118,6 +118,9 @@ class GitHubClient:
             await asyncio.sleep(5)
             response = await self._client.request(method, path, **kwargs)
             self._note_limits(response)
+        if response.status_code == 403 and self.rate_limited_until:
+            # A fresh process learns the budget is gone by being told so once.
+            raise RateLimited(self._resets_at)
         if read and response.status_code == 304 and cached is not None:
             return httpx.Response(200, content=cached[1], request=response.request)
         etag = response.headers.get("etag")

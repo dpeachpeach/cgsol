@@ -59,9 +59,32 @@ class Poller:
     # --- lifecycle ------------------------------------------------------------
 
     async def start(self) -> None:
-        await self.reconcile()
-        self.store.first_sync.set()
+        try:
+            await self.reconcile()
+            self.store.first_sync.set()
+        except RateLimited as limit:
+            # Refusing to boot until GitHub answers turns an hour of thin
+            # budget into an hour of downtime. Come up unhealthy and converge.
+            log.warning("first sync deferred: %s", limit)
+            self._tasks = [asyncio.create_task(self._recover(limit), name="cgsol-recover")]
+            return
         self._tasks = [
+            asyncio.create_task(self._session_loop(), name="cgsol-sessions"),
+            asyncio.create_task(self._reconcile_loop(), name="cgsol-reconcile"),
+        ]
+
+    async def _recover(self, limit: RateLimited) -> None:
+        """Retry the first sync until it lands, then run the loops as normal."""
+        while not self.store.first_sync.is_set():
+            await self._wait_out(limit)
+            try:
+                await self.reconcile()
+                self.store.first_sync.set()
+            except RateLimited as again:
+                limit = again
+            except Exception:
+                log.exception("deferred first sync failed")
+        self._tasks += [
             asyncio.create_task(self._session_loop(), name="cgsol-sessions"),
             asyncio.create_task(self._reconcile_loop(), name="cgsol-reconcile"),
         ]
