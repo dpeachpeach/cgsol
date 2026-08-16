@@ -10,12 +10,20 @@ function num(value: number | null, digits = 2): string {
   return value === null ? "—" : value.toFixed(digits);
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Metric({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
   return (
     <Card className="metric" compact>
       <div className="metric__label">{label}</div>
       <div className="metric__value">{value}</div>
-      {sub && <div className="bp5-text-muted bp5-text-small">{sub}</div>}
+      {sub && <div className="metric__sub">{sub}</div>}
     </Card>
   );
 }
@@ -64,7 +72,10 @@ export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
         {Object.entries(funnel).map(([stage, count]) => (
           <div className="funnel__row" key={stage}>
             <span style={{ width: 90 }}>{stage}</span>
-            <div className="funnel__bar" style={{ width: `${(count / widest) * 60}%` }} />
+            <div
+              className="funnel__bar"
+              style={{ width: `${(count / widest) * 60}%` }}
+            />
             <span>{count}</span>
           </div>
         ))}
