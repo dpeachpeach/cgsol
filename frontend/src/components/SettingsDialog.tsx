@@ -189,16 +189,17 @@ export function SettingsDialog({
           ))}
         </Collapse>
 
-        {/* Settings live in the fork, not on local disk: same bus as everything
-            else, and every change is a reviewable commit. */}
-        <Callout intent="primary" icon="git-commit" style={{ marginTop: 16 }}>
-          Written to <code>{config?.path ?? ".cgsol/config.yaml"}</code> in{" "}
-          <code>{config?.repo ?? "the fork"}</code>. The orchestrator reloads on
-          the push webhook.
+        {/* Nothing is committed: the cap is a stop button, and a stop button
+            should not need GitHub to be reachable to work. */}
+        <Callout intent="primary" icon="flash" style={{ marginTop: 16 }}>
+          Applied to the running orchestrator immediately. Not committed —{" "}
+          <code>{config?.path ?? ".cgsol/config.yaml"}</code> in{" "}
+          <code>{config?.repo ?? "the fork"}</code> still supplies the defaults
+          on restart.
         </Callout>
         {saved && (
           <Callout intent="success" style={{ marginTop: 12 }}>
-            Committed.
+            Applied.
           </Callout>
         )}
       </DialogBody>
@@ -208,7 +209,7 @@ export function SettingsDialog({
             <Button text="Close" onClick={onClose} />
             <Button
               intent="primary"
-              text="Commit to fork"
+              text="Apply"
               onClick={() => void save()}
             />
           </>

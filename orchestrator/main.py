@@ -237,13 +237,15 @@ async def api_get_config() -> dict[str, Any]:
 
 @app.put("/api/config")
 async def api_put_config(config: dict[str, Any]) -> dict[str, Any]:
-    """Settings are written to the fork, not to local disk — same bus as
-    everything else, and the change is reviewable in git history."""
+    """Applied to the running process and nowhere else.
+
+    These are operating knobs, not shared state: committing them made every
+    tweak of the spend cap a commit on the fork, and made turning spending off
+    depend on GitHub being reachable. The repo file still seeds them on boot.
+    """
     service = get_orchestrator()
-    body = yaml.safe_dump(config, sort_keys=True)
-    await service.github.put_file(CONFIG_PATH, body, "chore(cgsol): update orchestrator config")
-    applied = await service.load_remote_config()
-    return {"written": CONFIG_PATH, "applied": applied}
+    applied = await service.apply_config(config)
+    return {"applied": applied, "persisted": False}
 
 
 # --- static -------------------------------------------------------------------

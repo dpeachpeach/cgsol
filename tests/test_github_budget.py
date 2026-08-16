@@ -146,3 +146,30 @@ async def test_an_exhausted_budget_stops_everything_and_says_when_it_returns() -
     with pytest.raises(RateLimited) as caught:
         await client.add_labels(7, ["needs-triage"])
     assert caught.value.resets_at == pytest.approx(client.rate_limited_until)
+
+
+async def test_the_raw_and_json_views_of_a_file_are_cached_apart() -> None:
+    """Same URL, two representations. Keying the conditional cache on the URL
+    alone replayed the raw YAML as the answer to the metadata read, and the
+    commit path died parsing it — settings could be read but never written."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        raw = "raw" in request.headers.get("accept", "")
+        if request.headers.get("if-none-match") == ('W/"raw"' if raw else 'W/"json"'):
+            return httpx.Response(304, headers=limits(4000))
+        if raw:
+            return httpx.Response(
+                200, text="max_concurrent_workers: 0\n", headers={"etag": 'W/"raw"', **limits(3999)}
+            )
+        return httpx.Response(
+            200, json={"sha": "deadbeef"}, headers={"etag": 'W/"json"', **limits(3998)}
+        )
+
+    client = client_with(httpx.MockTransport(handle))
+    assert await client.get_file(".cgsol/config.yaml") == "max_concurrent_workers: 0\n"
+    head = await client._request("GET", f"/repos/{REPO}/contents/.cgsol/config.yaml")
+    assert head.json()["sha"] == "deadbeef"
+    # And again, now that both are cached and both answer 304.
+    assert await client.get_file(".cgsol/config.yaml") == "max_concurrent_workers: 0\n"
+    head = await client._request("GET", f"/repos/{REPO}/contents/.cgsol/config.yaml")
+    assert head.json()["sha"] == "deadbeef"

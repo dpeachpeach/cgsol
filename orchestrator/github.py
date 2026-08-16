@@ -124,8 +124,11 @@ class GitHubClient:
         return time.time() + self._clock_skew
 
     @staticmethod
-    def _cache_key(path: str, params: Any) -> str:
-        return f"{path}?{sorted((params or {}).items())}"
+    def _cache_key(path: str, params: Any, accept: str | None) -> str:
+        # The same contents URL answers with JSON metadata or with the raw file
+        # depending on Accept, so the representation belongs in the key: replay a
+        # cached 304 under the wrong one and the caller parses YAML as JSON.
+        return f"{accept or ''} {path}?{sorted((params or {}).items())}"
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         read = method.upper() == "GET"
@@ -138,7 +141,7 @@ class GitHubClient:
         headers = dict(kwargs.pop("headers", None) or {})
         if self._tokens is not None:
             headers["Authorization"] = f"Bearer {await self._tokens.token()}"
-        key = self._cache_key(path, kwargs.get("params"))
+        key = self._cache_key(path, kwargs.get("params"), headers.get("Accept"))
         cached = self._etags.get(key) if read else None
         if cached is not None:
             headers["If-None-Match"] = cached[0]

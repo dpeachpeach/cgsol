@@ -243,12 +243,16 @@ class Orchestrator:
         return {"queued": [issue.number for issue in candidates]}
 
     async def load_remote_config(self) -> dict[str, Any]:
-        """Settings live in the fork, not on the orchestrator's disk. Same rule as
-        everything else: no local source of truth."""
+        """Settings the fork carries, so a restart comes back with the operator's
+        policy rather than the image's defaults."""
         raw = await self.github.get_file(CONFIG_PATH)
         if not raw:
             return {}
-        data = yaml.safe_load(raw) or {}
+        return await self.apply_config(yaml.safe_load(raw) or {})
+
+    async def apply_config(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Apply policy to the running process, whatever brought it here — the
+        repo file on boot, or the dashboard turning spending off right now."""
         # Explicitly enumerated: remote config controls policy, never credentials
         # or endpoints. A repo file that could rewrite `devin_api_base` would be
         # a write-scoped token away from being an exfiltration primitive.
