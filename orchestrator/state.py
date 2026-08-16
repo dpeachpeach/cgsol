@@ -23,7 +23,13 @@ from orchestrator.models import CheckRun, Issue, IssueCard, IssueMeta, SessionIn
 
 
 class Store:
-    def __init__(self) -> None:
+    def __init__(self, repo: str | None = None) -> None:
+        #: `owner-name` of the repository this deployment serves, matched against
+        #: a session's `repo:` tag. Sessions are org-scoped and issue numbers
+        #: collide across repositories, so without this two deployments in one
+        #: org adopt each other's work and the board looks plausible while doing
+        #: it. `None` means no filtering, for tests and the simulator.
+        self.repo = repo
         self._cards: dict[int, IssueCard] = {}
         self._sessions: dict[str, SessionInfo] = {}
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
@@ -57,7 +63,17 @@ class Store:
         card.last_synced = time.time()
         return card
 
+    def owns(self, session: SessionInfo) -> bool:
+        """Untagged sessions are ours: they predate the tag, and refusing them
+        would orphan in-flight work that keeps billing. Only a stated mismatch
+        is somebody else's."""
+        if self.repo is None or session.repo is None:
+            return True
+        return session.repo == self.repo
+
     def upsert_session(self, session: SessionInfo) -> None:
+        if not self.owns(session):
+            return
         self._sessions[session.session_id] = session
         number = session.issue_number
         if number is None:
@@ -70,6 +86,17 @@ class Store:
             card.meta.pr_url = session.pr_url
         card.meta.record_spend(session.session_id, session.acus_consumed)
         card.last_synced = time.time()
+
+    def forget_session(self, session_id: str) -> None:
+        """Undo an attachment made before the session said whose it was. Only
+        the list payload is that thin; the detail carries the repo tag."""
+        session = self._sessions.pop(session_id, None)
+        if session is None:
+            return
+        number = session.issue_number
+        card = self._cards.get(number) if number is not None else None
+        if card is not None and card.session is not None and card.session.session_id == session_id:
+            card.session = None
 
     def set_checks(self, number: int, checks: list[CheckRun]) -> None:
         card = self._cards.get(number)

@@ -133,6 +133,7 @@ def poller_for(devin: FakeDevin, store: Store, dispatcher: Dispatcher) -> Poller
     poller.dispatcher = dispatcher
     poller.metrics = MetricsRegistry()
     poller._consumed = set()
+    poller._foreign = set()
     poller._swept_through = None
     poller._last_full_sweep = 0.0
     poller._sweeping = asyncio.Lock()

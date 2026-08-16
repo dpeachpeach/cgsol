@@ -114,6 +114,7 @@ def poller_for(github: RecordingGitHub, settings: Settings | None = None) -> Pol
     poller.dispatcher = dispatcher
     poller.metrics = MetricsRegistry()
     poller._consumed = set()
+    poller._foreign = set()
     poller._swept_through = None
     poller._last_full_sweep = 0.0
     poller._sweeping = asyncio.Lock()

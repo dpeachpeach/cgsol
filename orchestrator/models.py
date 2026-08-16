@@ -69,6 +69,18 @@ class SessionInfo(BaseModel):
         return "unknown"
 
     @property
+    def repo(self) -> str | None:
+        """Which deployment's repository this session belongs to, as `owner-name`.
+
+        `None` for sessions created before the tag existed, which is why the
+        check elsewhere is "mismatch" rather than "not mine".
+        """
+        for tag in self.tags:
+            if tag.startswith("repo:"):
+                return tag.split(":", 1)[1]
+        return None
+
+    @property
     def issue_number(self) -> int | None:
         for tag in self.tags:
             if tag.startswith("issue:"):

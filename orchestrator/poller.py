@@ -69,6 +69,9 @@ class Poller:
         self.dispatcher = dispatcher
         self.metrics = metrics
         self._consumed: set[str] = set()
+        #: Sessions another deployment in this org owns. Remembered so they cost
+        #: one detail read, not one per cycle.
+        self._foreign: set[str] = set()
         self._tasks: list[asyncio.Task[None]] = []
         #: On GitHub's clock, from the sweep that read it.
         self._swept_through: float | None = None
@@ -175,8 +178,15 @@ class Poller:
     async def poll_sessions(self) -> None:
         if not self.settings.devin_api_key and not self.settings.replay:
             return
-        sessions = await self.devin.list_by_tags([self.settings.tag_namespace])
+        # Narrowing the query keeps another deployment's sessions out of the
+        # payload; the store rejects them anyway, because they also arrive by
+        # other routes.
+        sessions = await self.devin.list_by_tags(
+            [self.settings.tag_namespace, self.settings.repo_tag]
+        )
         for session in sessions:
+            if session.session_id in self._foreign or not self.store.owns(session):
+                continue
             previous = self.store.session(session.session_id)
             self.store.upsert_session(session)
             if previous is None and session.origin == "automation":
@@ -230,6 +240,14 @@ class Poller:
         emptiness is final.
         """
         detail = await self.devin.get_session(summary.session_id)
+        if not self.store.owns(detail):
+            # The summary didn't say whose it was and the detail does. Drop it
+            # rather than consume it: consuming ends in terminating a session
+            # another deployment is still running.
+            log.info("ignoring session %s tagged for %s", detail.session_id, detail.repo)
+            self._foreign.add(detail.session_id)
+            self.store.forget_session(detail.session_id)
+            return False
         self.store.upsert_session(detail)
         output: dict[str, Any] | None = detail.structured_output
         role = detail.role or summary.role
