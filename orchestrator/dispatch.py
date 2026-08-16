@@ -301,6 +301,16 @@ class Dispatcher:
             f"**PR opened** — {pr_url}\n\n{(output or {}).get('summary', '')}",
         )
 
+    async def adopt_pr(self, card: IssueCard, pr: dict[str, Any]) -> None:
+        """Take an open PR found on GitHub as proof the worker got that far.
+
+        The session is the usual messenger, but it is not the record: it can be
+        terminated, lost to a restart, or never polled. The PR is the record.
+        """
+        card.meta.pr_url = pr["html_url"]
+        card.meta.branch = (pr.get("head") or {}).get("ref")
+        await self._move(card, State.DEVIN_PR_OPEN)
+
     # --- CI loop --------------------------------------------------------------
 
     async def evaluate_ci(self, card: IssueCard, checks: list[CheckRun], merged: bool) -> None:

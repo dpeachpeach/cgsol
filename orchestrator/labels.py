@@ -74,8 +74,18 @@ TRANSITIONS: dict[State, frozenset[State]] = {
             State.DEVIN_BLOCKED,
         }
     ),
+    # `devin-pr-open` directly, because a PR on the fork is evidence the work
+    # happened whether or not this process ever saw the session that did it —
+    # a restart, or a session terminated after it pushed, must not strand the
+    # card behind a transition nobody is left to make.
     State.DEVIN_ELIGIBLE: frozenset(
-        {State.DEVIN_WORKING, State.HUMAN_REVIEW, State.DEVIN_BLOCKED, State.NEEDS_TRIAGE}
+        {
+            State.DEVIN_WORKING,
+            State.DEVIN_PR_OPEN,
+            State.HUMAN_REVIEW,
+            State.DEVIN_BLOCKED,
+            State.NEEDS_TRIAGE,
+        }
     ),
     State.DEVIN_WORKING: frozenset(
         {State.DEVIN_PR_OPEN, State.DEVIN_BLOCKED, State.HUMAN_REVIEW, State.DEVIN_ELIGIBLE}

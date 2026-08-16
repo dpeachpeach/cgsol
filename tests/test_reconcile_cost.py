@@ -256,3 +256,17 @@ async def test_a_dropped_connection_on_the_first_sweep_does_not_kill_the_process
         assert poller.store.card(7) is not None
     finally:
         await poller.stop()
+
+
+async def test_a_card_that_has_not_noticed_its_pr_is_still_promoted() -> None:
+    """The saving must not be taken on the transition that needs the read: a
+    worker's PR appears while the card still says `devin-eligible`, and nothing
+    but the check sweep moves it on."""
+    github = RecordingGitHub([issue(24, ["devin-eligible", "tier:medium"])], [pull_request(32, 24)])
+    poller = poller_for(github)
+
+    await poller.reconcile()
+
+    assert github.check_refs == ["sha32"]
+    card = poller.store.card(24)
+    assert card is not None and card.state is State.DEVIN_PR_OPEN
