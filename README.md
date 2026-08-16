@@ -5,8 +5,17 @@ and small-fix issues that are individually below the cut line and collectively a
 nonzero risk. Issues go in; reviewed pull requests come out, or an explicit
 decline with reasoning.
 
-**Just want to see it work?** `make up` — no credentials needed, replays a
-recorded run at http://localhost:5173.
+**Just want to see it work?** Docker and git are the only prerequisites:
+
+```bash
+git clone https://github.com/dpeachpeach/cgsol
+cd cgsol
+docker compose up --build      # first build ~2 min; ^C to stop
+```
+
+The board is at http://localhost:5173 once the orchestrator reports healthy. No
+credentials, no `.env`, no Devin session, nothing spent. [Running
+it](#running-it) has the rest.
 
 ---
 
@@ -154,25 +163,71 @@ on the card — but our own writes still start triage, because
 
 ## Running it
 
+### What each credential buys
+
+Three tiers, and the boundary between them is the point: the board is worth
+looking at before you have spent anything.
+
+| you have | you get | it writes | it spends |
+| --- | --- | --- | --- |
+| **nothing** (replay, the default) | the whole board, driven by a simulated fork and simulated sessions | nothing — no socket is opened above `orchestrator/transport.py` | nothing |
+| **+ a GitHub token**, `REPLAY=false` | the real fork's issues, PRs and checks on the board | **labels and a metadata comment on the fork** — see below | nothing |
+| **+ a Devin key**, `MAX_CONCURRENT_WORKERS` > 0 or *Triage backlog* | triage and worker sessions | as above | **ACUs** |
+
+There is no read-only live mode. With `REPLAY=false` the reconciler is the state
+machine's writer: it moves state labels, puts `ready-to-merge` on green PRs and
+keeps its metadata comment up to date, whether or not a Devin key is configured.
+If you only want to look at the pipeline, look at it in replay.
+
 ### Replay (default — no credentials)
 
 ```bash
-make up          # http://localhost:5173
+docker compose up --build     # or: make up
 ```
+
+- board: http://localhost:5173
+- orchestrator: http://localhost:8000 — `/healthz`, `/api/state`, `/api/metrics`
+- stop and delete the containers: `docker compose down -v` (or `make down`)
+
+Both ports have to be free. The frontend deliberately waits for the
+orchestrator's health check, which does not pass until the first sync has
+completed, so a board that renders is a board with data on it. Replay drives
+itself: it triages the seeded backlog on boot (`REPLAY_AUTOSTART`), dispatches
+simulated workers, opens simulated PRs and runs simulated CI, all in-process.
 
 Everything that distinguishes replay from live lives at the socket, in
 `orchestrator/transport.py`. Above that line the clients, the reconciler and the
 state machine cannot tell the difference, which is the only thing that makes a
 replay worth having as a test.
 
+`make` is a convenience, not a requirement — every target is a one-line command
+you can run yourself. `make up` is `REPLAY=true docker compose up --build`.
+
 ### Live
 
+Live needs three things Docker does not provide: credentials, a public URL for
+GitHub to deliver webhooks to, and [uv](https://docs.astral.sh/uv/) to run the
+setup scripts on the host (`github-app`, `bootstrap`, `seed`, `simulate` are
+Python, not services).
+
 ```bash
-cp .env.example .env    # DEVIN_API_KEY, DEVIN_ORG_ID
-make github-app         # creates the GitHub App: identity, webhook, secret, key
-make bootstrap          # push playbooks + knowledge notes, write their IDs back to .env
-make live               # includes the smee tunnel, so nothing to install locally
+cp .env.example .env    # then fill in DEVIN_API_KEY, DEVIN_ORG_ID
+make github-app         # creates the GitHub App: identity, webhook, secret, key,
+                        #   mints SMEE_URL, and writes all of it back to .env
+make bootstrap          # push playbooks + knowledge notes, write their IDs to .env
+make live               # REPLAY=false docker compose --profile live up --build
 ```
+
+Order matters: `make live` starts a smee container that is passed `SMEE_URL`, so
+running it before `make github-app` starts a tunnel to nowhere. The Compose
+warning `The "SMEE_URL" variable is not set` on a replay run is expected and
+harmless — the smee container only exists in the `live` profile.
+
+**Configuration is read from `.env`, not from your shell.** Compose passes the
+whole file to the orchestrator through `env_file`, but only the handful of
+variables `docker-compose.yml` enumerates can be overridden by an exported
+shell variable. `MAX_CONCURRENT_WORKERS=0 docker compose up` therefore does
+*not* set the spend cap — it is silently ignored. Put it in `.env`.
 
 #### The GitHub credential
 
@@ -203,7 +258,16 @@ in `.env`.
 
 `GITHUB_TOKEN` still works and is still the fallback: with no app configured the
 client authenticates with the PAT exactly as before, which is what keeps replay
-and any half-migrated setup running.
+and any half-migrated setup running. A classic PAT needs `repo`; a fine-grained
+token on the fork needs **Issues: read & write** (state labels, the metadata
+comment), **Pull requests: read & write** (`ready-to-merge`), **Contents: read**
+(`.cgsol/config.yaml`), **Checks: read** and **Metadata: read**. A token with
+only read access will populate the board and then log a 403 on every sweep that
+tries to move a card.
+
+Without a webhook — a PAT and no tunnel — nothing is lost but latency: the
+reconciler re-derives the whole board from GitHub every three minutes, and a
+webhook is only ever a hint that something moved.
 
 `DEVIN_API_KEY` has to belong to a service user with the org-level
 `UseDevinSessions` permission: playbooks, knowledge, dispatch and polling all run
@@ -216,12 +280,37 @@ endpoints, and the ACU columns go quiet.
 is already seeded; the script exists so the setup is reproducible, and
 `seed/issues.yaml` doubles as the answer key replay scores triage against.
 
+### The spend switches
+
+Nothing dispatches a Devin session because you ran `docker compose up`. Three
+separate things have to be true first, and the defaults leave all three false:
+
+1. **`REPLAY=false`.** Replay's sessions are simulated — the Devin API is never
+   reached, so a replay run cannot spend whatever else is configured.
+2. **A Devin key.** Without `DEVIN_API_KEY` the poller does not even list
+   sessions.
+3. **`MAX_CONCURRENT_WORKERS` > 0.** Workers are dispatched from the poll loop
+   rather than from a button, so this is the cap that decides whether a boot
+   that finds an eligible issue starts paying for it. **It defaults to 0 in live
+   mode** — raising it, in `.env` or in the dashboard's settings dialog, is the
+   act that turns spending on. Replay defaults to 6 so the demo moves.
+
+Triage is the other way in, and it is `TRIAGE_MODE=manual` by default: the
+backlog is not scouted until someone presses *Triage backlog* (which shows an
+ACU estimate first). `auto` and `chunked` spend on a webhook and on a timer
+respectively. The cap and the cadence can both be changed on the running
+process from the dashboard; that is a live control, not a persisted one, so a
+restart returns to what `.env` says.
+
 ### Other targets
+
+These run on the host and need `uv` (and, for `check`, Node 20):
 
 ```bash
 make simulate    # signed webhook deliveries, sent twice each, at a running receiver
 make automations # render devin/automations/*.yaml for review before applying
-make check       # ruff, mypy, pytest, tsc, eslint
+make check       # uv sync, npm ci, ruff, mypy, pytest, tsc, eslint
+make seed        # file the corpus into a fresh fork (needs a live GitHub token)
 ```
 
 ## Measuring it

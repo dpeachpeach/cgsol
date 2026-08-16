@@ -53,6 +53,7 @@ web: ## Frontend dev server on :5173, proxying /api to :8000.
 .PHONY: check
 check: ## Everything CI runs.
 	$(UV) sync --frozen --extra dev
+	cd frontend && npm ci
 	$(UV) run ruff check .
 	$(UV) run ruff format --check .
 	$(UV) run mypy orchestrator

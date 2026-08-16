@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     #: result is banked there is nobody to answer, and it is holding a slot.
     terminate_consumed_sessions: bool = True
     max_ci_rounds: int = 3
+    #: Workers that may run at once, and the only brake on spending. Left unset
+    #: it depends on the mode: replay simulates sessions, so the demo runs at
+    #: the value below, while live starts at 0 and waits to be turned on. A
+    #: fresh clone that reached a real fork and started paying for sessions
+    #: nobody asked for would be the wrong default to ship.
     max_concurrent_workers: int = 6
     scout_batch_max: int = 25
     acu_ceiling_scout: float = 3
@@ -127,13 +132,22 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _replay_needs_no_credentials(self) -> Settings:
-        """Replay is the mode an evaluator can actually run, so it must not
-        require a token to be present, or even plausible."""
+    def _mode_defaults(self) -> Settings:
+        """What each mode assumes when nothing was configured.
+
+        Replay is the mode an evaluator can actually run, so it must not require
+        a token to be present, or even plausible. Live is the mode that spends
+        money, so it must not assume permission to.
+        """
         if self.replay:
             self.github_token = self.github_token or "replay"
             self.devin_api_key = self.devin_api_key or "replay"
             self.devin_org_id = self.devin_org_id or "org-replay"
+        elif "max_concurrent_workers" not in self.model_fields_set:
+            # Live, and nobody said how much to spend. Say zero: dispatch runs
+            # off the poll loop, so a boot that finds an eligible issue would
+            # otherwise start paying for it before anyone pressed anything.
+            self.max_concurrent_workers = 0
         return self
 
     @property
