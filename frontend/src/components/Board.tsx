@@ -100,6 +100,17 @@ function since(ts: number): string {
   return `${Math.round(seconds / 60)}m ago`;
 }
 
+function sinceStamp(stamp: string | null): string {
+  if (!stamp) return "just now";
+  const at = Date.parse(stamp);
+  return Number.isNaN(at) ? "just now" : since(at / 1000);
+}
+
+const PROGRESS_LABEL: Record<string, string> = {
+  "drafting-pr": "drafting PR",
+  "pr-opened": "PR opened",
+};
+
 const UNLABELLED = "unlabelled";
 
 function statusKey(card: IssueCard): string {
@@ -194,6 +205,15 @@ function IssueTile({
         {card.meta.acus > 0 && (
           <Tag round minimal icon="dollar">
             {card.meta.acus.toFixed(2)} ACU
+          </Tag>
+        )}
+        {/* Narration, and only until GitHub can speak for itself: once the PR
+            exists the card has a real state to show and the worker's account of
+            what it was doing is no longer the most interesting thing on it. */}
+        {card.progress_phase && !card.meta.pr_url && columnKey(card) === "working" && (
+          <Tag round intent="primary" icon="build">
+            {PROGRESS_LABEL[card.progress_phase] ?? card.progress_phase} ·{" "}
+            {sinceStamp(card.progress_at)}
           </Tag>
         )}
         {card.ready_to_merge && (

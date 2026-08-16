@@ -59,6 +59,10 @@ export interface IssueCard {
   meta: IssueMeta;
   session: SessionInfo | null;
   checks: CheckRun[];
+  progress_phase: string | null;
+  progress_message: string | null;
+  progress_at: string | null;
+  progress_comment_id: number | null;
   pr_number: number | null;
   pr_merged: boolean;
   ready_to_merge: boolean;

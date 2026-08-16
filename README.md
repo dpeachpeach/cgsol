@@ -83,6 +83,25 @@ CI autofix is capped at three rounds. A fourth would be an infinite loop with a
 budget attached, so round three escalates to `human-review` with
 `escalation:ci-unfixable` and the count is kept.
 
+### Workers report in
+
+A worker posts one comment on its issue when it starts implementing:
+
+```text
+CGSOL_PROGRESS: drafting-pr Preparing the smallest viable fix.
+```
+
+The board shows `drafting PR · 2m ago` from that, and it is the cheapest signal
+in the system: Devin's integration writes it on Devin's quota, GitHub delivers it
+as a webhook, and the handler projects it straight out of the payload — no issue
+read, no PR read, no check read. A progress event that provoked a refetch would
+cost more than the polling it replaced, so the tests assert the absence of those
+calls rather than trusting the handler to stay honest.
+
+It says what a worker is doing, never what is true: the PR comes from PR
+adoption, green comes from checks, and an unrecognised phase is dropped rather
+than rendered.
+
 ## Cost containment
 
 | session | ceiling |

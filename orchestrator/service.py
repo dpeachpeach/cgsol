@@ -20,7 +20,7 @@ from orchestrator.models import TriageEstimate
 from orchestrator.poller import Poller
 from orchestrator.resources import load_resources
 from orchestrator.state import Store
-from orchestrator.webhooks import Debouncer, DeliveryDedup, classify_sender
+from orchestrator.webhooks import Debouncer, DeliveryDedup, classify_sender, parse_progress
 
 log = logging.getLogger("cgsol.service")
 
@@ -114,11 +114,40 @@ class Orchestrator:
                 return "refreshed"
             return "ignored"
 
-        if event == "issue_comment" and from_human:
-            number = (payload.get("issue") or {}).get("number")
-            if number is not None:
-                self._count_human_turn(number)
-            return "noted"
+        if event == "issue_comment":
+            # A worker's own progress report is the one thing a bot tells us
+            # that we did not already write ourselves, and the whole point is
+            # that it is free: everything the card needs is in this payload, so
+            # nothing below this line asks GitHub anything.
+            if from_bot and (progress := parse_progress(payload)) is not None:
+                card = self.store.card(progress.issue)
+                if card is None or card.progress_comment_id == progress.comment_id:
+                    return "ignored"
+                card.progress_phase = progress.phase
+                card.progress_message = progress.message or None
+                card.progress_at = progress.at
+                card.progress_comment_id = progress.comment_id
+                log.info(
+                    "worker progress received: issue=%d phase=%s source=webhook",
+                    progress.issue,
+                    progress.phase,
+                )
+                await self.store.publish(
+                    "worker.progress",
+                    {
+                        "issue": progress.issue,
+                        "phase": progress.phase,
+                        "message": progress.message,
+                        "at": progress.at,
+                    },
+                )
+                return "progress"
+            if from_human:
+                number = (payload.get("issue") or {}).get("number")
+                if number is not None:
+                    self._count_human_turn(number)
+                return "noted"
+            return "ignored"
 
         if event in {"check_run", "check_suite", "pull_request", "status", "workflow_run"}:
             # CI moved. The reconciler owns the evaluation; poke it early rather

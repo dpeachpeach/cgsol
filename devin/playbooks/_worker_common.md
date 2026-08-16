@@ -31,17 +31,28 @@ you have, and let CI judge. Never sit watching a dependency install.
 ## What you do
 
 1. Read enough of the codebase to make a correct, minimal, idiomatic change.
-2. Make the change. Match surrounding conventions. Touch only files the issue
+2. Once you have read the issue and are starting the implementation, post
+   **exactly one** comment on the issue whose first line begins with:
+
+   ```
+   CGSOL_PROGRESS: drafting-pr <one sentence on what you are about to change>
+   ```
+
+   The dashboard reads that comment straight off the webhook, which is the only
+   reason the board can show work in flight without paying for a poll. Post it
+   once and never again — repeats cost the reviewer noise and buy nothing. Never
+   use this channel to assert CI state or readiness; GitHub's checks decide that.
+3. Make the change. Match surrounding conventions. Touch only files the issue
    requires.
-3. Run lint and type checks **on the changed files only**, plus whatever local
+4. Run lint and type checks **on the changed files only**, plus whatever local
    verification your tier permits.
-4. Commit on a branch named `devin/issue-<ISSUE_NUMBER>-<short-slug>` — the
+5. Commit on a branch named `devin/issue-<ISSUE_NUMBER>-<short-slug>` — the
    orchestrator correlates sessions to issues by this convention as well as by
    session tags, so the name is load-bearing.
-5. Open a PR against the default branch. The PR body must contain the line
+6. Open a PR against the default branch. The PR body must contain the line
    `Closes #<ISSUE_NUMBER>` and a short explanation of the approach and its
    blast radius.
-6. Post one comment on your own PR recording where you landed, in this shape:
+7. Post one comment on your own PR recording where you landed, in this shape:
 
    > **Ready to merge** — confidence 0.85. Changed `<files>`; ran `<what you
    > ran>` and it passed. Risk: `<the one thing a reviewer should look at>`.
@@ -51,7 +62,7 @@ you have, and let CI judge. Never sit watching a dependency install.
    verdict — CI still decides, and the orchestrator reads the checks rather
    than this comment. It exists so the reviewer sees your reasoning on the PR
    itself rather than in a session log.
-7. Stop. Do not wait for CI, do not poll it, do not fix it. A separate autofix
+8. Stop. Do not wait for CI, do not poll it, do not fix it. A separate autofix
    session owns that loop.
 
 ## When to stop early

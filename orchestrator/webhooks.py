@@ -21,7 +21,7 @@ import hmac
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 log = logging.getLogger("cgsol.webhooks")
 
@@ -107,6 +107,51 @@ def is_self_sender(payload: dict[str, Any], self_login: str) -> bool:
     the pre-App behaviour exactly.
     """
     return bool(self_login) and sender_login(payload) == self_login
+
+
+#: Workers announce progress with a machine-readable prefix so a progress
+#: comment is distinguishable from prose without asking GitHub anything.
+PROGRESS_PREFIX = "CGSOL_PROGRESS:"
+PROGRESS_PHASES = {"drafting-pr", "pr-opened"}
+
+
+class Progress(NamedTuple):
+    issue: int
+    phase: str
+    message: str
+    at: str
+    comment_id: int
+
+
+def parse_progress(payload: dict[str, Any]) -> Progress | None:
+    """A worker's progress comment, read entirely out of the delivery.
+
+    Everything the card needs is already in the payload, which is the point:
+    the orchestrator learns that work started without spending a read on it.
+    Anything unrecognised is None, and an unknown phase is dropped rather than
+    rendered, so a worker cannot invent board states by writing prose.
+    """
+    if payload.get("action") != "created":
+        return None
+    comment = payload.get("comment") or {}
+    body = str(comment.get("body") or "").strip()
+    if not body.startswith(PROGRESS_PREFIX):
+        return None
+    number = (payload.get("issue") or {}).get("number")
+    comment_id = comment.get("id")
+    if not isinstance(number, int) or not isinstance(comment_id, int):
+        return None
+    remainder = body.removeprefix(PROGRESS_PREFIX).strip()
+    phase, _, message = remainder.partition(" ")
+    if phase not in PROGRESS_PHASES:
+        return None
+    return Progress(
+        issue=number,
+        phase=phase,
+        message=message.strip(),
+        at=str(comment.get("created_at") or ""),
+        comment_id=comment_id,
+    )
 
 
 def classify_sender(payload: dict[str, Any], bot_logins: list[str], self_login: str) -> str:

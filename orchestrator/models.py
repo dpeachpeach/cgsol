@@ -170,6 +170,13 @@ class IssueCard(BaseModel):
     meta: IssueMeta = Field(default_factory=IssueMeta)
     session: SessionInfo | None = None
     checks: list[CheckRun] = Field(default_factory=list)
+    #: What the worker last said it was doing, straight from its progress
+    #: comment. Narrative only — the label is still the state, and this is a
+    #: claim about work in flight rather than a verdict about its result.
+    progress_phase: str | None = None
+    progress_message: str | None = None
+    progress_at: str | None = None
+    progress_comment_id: int | None = None
     pr_number: int | None = None
     pr_merged: bool = False
     ready_to_merge: bool = False
