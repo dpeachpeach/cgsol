@@ -73,11 +73,11 @@ class Settings(BaseSettings):
     triage_interval_seconds: float = 1800
 
     # --- Policy ---------------------------------------------------------------
-    #: A verdict below this is routed to a human instead of a worker. Off by
-    #: default: the analyst's own eligibility call is the gate, and a confident
-    #: wrong answer is not less likely than a hesitant right one. Raise it to
-    #: buy review at the cost of throughput.
-    confidence_threshold: float = 0.0
+    #: A verdict below this is routed to a human instead of a worker. Set low
+    #: deliberately: the analyst's own eligibility call is the gate, and a
+    #: confident wrong answer is not less likely than a hesitant right one, so
+    #: this catches only the verdicts the analyst itself barely believes.
+    confidence_threshold: float = 0.3
     #: Devin parks a finished session at `waiting_for_user` forever. Once its
     #: result is banked there is nobody to answer, and it is holding a slot.
     terminate_consumed_sessions: bool = True

@@ -41,7 +41,17 @@ you have, and let CI judge. Never sit watching a dependency install.
 5. Open a PR against the default branch. The PR body must contain the line
    `Closes #<ISSUE_NUMBER>` and a short explanation of the approach and its
    blast radius.
-6. Stop. Do not wait for CI, do not poll it, do not fix it. A separate autofix
+6. Post one comment on your own PR recording where you landed, in this shape:
+
+   > **Ready to merge** — confidence 0.85. Changed `<files>`; ran `<what you
+   > ran>` and it passed. Risk: `<the one thing a reviewer should look at>`.
+
+   Say **Ready to merge** only if you believe the change is complete and
+   correct; otherwise say **Needs a human** and why. This is a claim, not a
+   verdict — CI still decides, and the orchestrator reads the checks rather
+   than this comment. It exists so the reviewer sees your reasoning on the PR
+   itself rather than in a session log.
+7. Stop. Do not wait for CI, do not poll it, do not fix it. A separate autofix
    session owns that loop.
 
 ## When to stop early

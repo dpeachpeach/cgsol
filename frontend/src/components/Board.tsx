@@ -55,6 +55,25 @@ export const COLUMNS: {
   },
 ];
 
+const CONFIDENT = 0.3;
+
+/** `human-review` covers two unlike things: work that finished and wants a
+ *  merge, and work the pipeline refused to trust. Only the second is a request
+ *  for a person, so a confident card is filed as ready rather than pending. An
+ *  escalation of any other kind (ci-unfixable, ambiguous-requirement) always
+ *  wants the human, however confident the analyst was. */
+function columnKey(card: IssueCard): string {
+  if (card.state !== "human-review") {
+    return (
+      COLUMNS.find((column) => column.states.includes(card.state))?.key ?? ""
+    );
+  }
+  const escalation = card.meta.escalation;
+  if (escalation && escalation !== "low-confidence") return "human";
+  const confidence = card.meta.confidence;
+  return confidence === null || confidence >= CONFIDENT ? "ready" : "human";
+}
+
 const STATE_LABEL: Record<string, string> = {
   "needs-triage": "needs triage",
   "devin-eligible": "eligible",
@@ -121,11 +140,6 @@ function IssueTile({
             {card.tier.replace("tier:", "")}
           </Tag>
         )}
-        {card.meta.confidence !== null && (
-          <Tag round minimal>
-            conf {card.meta.confidence.toFixed(2)}
-          </Tag>
-        )}
         {card.meta.acus > 0 && (
           <Tag round minimal icon="dollar">
             {card.meta.acus.toFixed(2)} ACU
@@ -141,7 +155,7 @@ function IssueTile({
             {failing.length} red
           </Tag>
         )}
-        {card.meta.escalation && (
+        {card.meta.escalation && columnKey(card) === "human" && (
           <Tag round intent="danger">
             {card.meta.escalation}
           </Tag>
@@ -168,9 +182,7 @@ export function Board({
   return (
     <div className="board">
       {COLUMNS.map((column) => {
-        const items = cards.filter((card) =>
-          column.states.includes(card.state),
-        );
+        const items = cards.filter((card) => columnKey(card) === column.key);
         return (
           <div
             className="column"

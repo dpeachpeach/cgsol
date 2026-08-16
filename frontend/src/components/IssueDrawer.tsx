@@ -96,7 +96,6 @@ export function IssueDrawer({
                 {card.meta.suggested_approach && (
                   <p className="mono">Approach: {card.meta.suggested_approach}</p>
                 )}
-                <Tag minimal>confidence {card.meta.confidence?.toFixed(2) ?? "—"}</Tag>{" "}
                 <Tag minimal>{card.meta.tier ?? "untierd"}</Tag>
               </>
             ) : (
