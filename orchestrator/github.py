@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
+import email.utils
 import json
 import logging
 import re
@@ -25,6 +27,16 @@ log = logging.getLogger("cgsol.github")
 #: polling loop has been greedy. A stale board recovers on the next sweep; a
 #: dropped label transition does not recover at all.
 WRITE_RESERVE = 100
+
+#: Pacing below this is not worth taking. Spread over a full hour a whole
+#: budget works out under a second a read, and sleeping that would slow every
+#: sweep without changing whether the hour survives. Above it the arithmetic
+#: says the current burn rate does not fit in the window, and it should bite.
+PACE_FLOOR_SECONDS = 1.0
+
+#: Bounds the conditional-GET cache. Comfortably more than one sweep's worth
+#: of distinct URLs for a fork this size.
+ETAG_CACHE_MAX = 512
 
 META_MARKER = "devin-orchestrator:"
 META_RE = re.compile(r"<!--\s*devin-orchestrator:\s*(\{.*?\})\s*-->", re.DOTALL)
@@ -78,7 +90,12 @@ class GitHubClient:
         # which is what makes polling a repo every minute affordable at all.
         self._etags: dict[str, tuple[str, bytes]] = {}
         self._remaining: int | None = None
+        self._limit: int | None = None
         self._resets_at: float = 0.0
+        self._last_read: float = 0.0
+        #: GitHub's clock minus ours, from the `Date` header. `since=` filters
+        #: are compared against their clock, not the container's.
+        self._clock_skew: float = 0.0
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -92,6 +109,20 @@ class GitHubClient:
             return self._resets_at
         return 0.0
 
+    @property
+    def budget(self) -> dict[str, Any]:
+        """What is left of the hour, as last seen. Empty until a request answers."""
+        return {
+            "remaining": self._remaining,
+            "limit": self._limit,
+            "reserve": WRITE_RESERVE,
+            "resets_at": self._resets_at or None,
+        }
+
+    def server_time(self) -> float:
+        """Now, on GitHub's clock. Falls back to ours until one answers."""
+        return time.time() + self._clock_skew
+
     @staticmethod
     def _cache_key(path: str, params: Any) -> str:
         return f"{path}?{sorted((params or {}).items())}"
@@ -102,6 +133,8 @@ class GitHubClient:
         if self._resets_at > time.time() and (budget <= 0 or (read and budget <= WRITE_RESERVE)):
             raise RateLimited(self._resets_at)
 
+        if read:
+            await self._pace()
         headers = dict(kwargs.pop("headers", None) or {})
         if self._tokens is not None:
             headers["Authorization"] = f"Bearer {await self._tokens.token()}"
@@ -125,10 +158,40 @@ class GitHubClient:
             return httpx.Response(200, content=cached[1], request=response.request)
         etag = response.headers.get("etag")
         if read and response.status_code == 200 and etag:
+            # An incremental sweep asks a different URL every time, so entries
+            # that will never be matched again accumulate; oldest out first.
+            if len(self._etags) >= ETAG_CACHE_MAX:
+                del self._etags[next(iter(self._etags))]
             self._etags[key] = (etag, response.content)
         return response
 
+    async def _pace(self) -> None:
+        """Spend what is left evenly over what is left of the hour.
+
+        Self-tuning rather than a fixed ceiling: with a full budget the even
+        spread is under a second, which `PACE_FLOOR_SECONDS` declines to take,
+        so ordinary polling is unaffected. It only bites once the arithmetic
+        says the remaining budget will not cover the rest of the window — and
+        then a thin hour degrades into slower polling rather than a blank board.
+        """
+        now = time.time()
+        window = self._resets_at - now
+        if self._remaining is None or window <= 0:
+            return
+        spacing = window / max(1, self._remaining - WRITE_RESERVE)
+        if spacing < PACE_FLOOR_SECONDS:
+            self._last_read = now
+            return
+        gap = (self._last_read + spacing) - now
+        if gap > 0:
+            await asyncio.sleep(min(gap, window))
+        self._last_read = time.time()
+
     def _note_limits(self, response: httpx.Response) -> None:
+        date = response.headers.get("date")
+        if date:
+            with contextlib.suppress(TypeError, ValueError):
+                self._clock_skew = email.utils.parsedate_to_datetime(date).timestamp() - time.time()
         remaining = response.headers.get("x-ratelimit-remaining")
         reset = response.headers.get("x-ratelimit-reset")
         if remaining is None or reset is None:
@@ -137,6 +200,10 @@ class GitHubClient:
             self._remaining, self._resets_at = int(remaining), float(reset)
         except ValueError:
             return
+        limit = response.headers.get("x-ratelimit-limit")
+        if limit is not None:
+            with contextlib.suppress(ValueError):
+                self._limit = int(limit)
         if self._remaining <= WRITE_RESERVE:
             log.warning(
                 "github budget low: %s left, resets in %.0fs",
@@ -146,15 +213,21 @@ class GitHubClient:
 
     # --- reads ----------------------------------------------------------------
 
-    async def list_issues(self, state: str = "open", limit: int = 100) -> list[Issue]:
+    async def list_issues(
+        self, state: str = "open", limit: int = 100, since: str | None = None
+    ) -> list[Issue]:
+        """`since` is an ISO-8601 timestamp: only issues touched after it.
+
+        The cheap sweep. A repo of 30 issues costs 30 issues' worth of payload
+        every time it is read in full, and almost none of them moved.
+        """
         issues: list[Issue] = []
         page = 1
         while len(issues) < limit:
-            response = await self._request(
-                "GET",
-                f"/repos/{self._repo}/issues",
-                params={"state": state, "per_page": min(100, limit), "page": page},
-            )
+            params: dict[str, Any] = {"state": state, "per_page": min(100, limit), "page": page}
+            if since is not None:
+                params["since"] = since
+            response = await self._request("GET", f"/repos/{self._repo}/issues", params=params)
             response.raise_for_status()
             batch = response.json()
             if not batch:

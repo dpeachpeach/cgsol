@@ -63,11 +63,20 @@ export interface IssueCard {
   session_url?: string;
 }
 
+/** What GitHub last said is left of the hourly REST budget. */
+export interface RateBudget {
+  remaining: number | null;
+  limit: number | null;
+  reserve: number;
+  resets_at: number | null;
+}
+
 export interface Snapshot {
   cards: IssueCard[];
   counts: Record<string, number>;
   tiers: Record<string, number>;
   active_sessions: number;
+  budget: RateBudget | null;
   synced_at: number;
 }
 

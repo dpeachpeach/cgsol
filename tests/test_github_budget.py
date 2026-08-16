@@ -8,14 +8,27 @@ itself because a projection built from failed reads is worse than a stale one.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import httpx
 import pytest
 
+from orchestrator import github as github_module
 from orchestrator.config import Settings
 from orchestrator.github import WRITE_RESERVE, GitHubClient, RateLimited
 
 REPO = "dpeachpeach/superset-cg"
+
+
+def _record(slept: list[float]) -> Callable[[float], Coroutine[Any, Any, None]]:
+    """Stand in for `asyncio.sleep`, so a test of pacing does not have to wait
+    out the pacing."""
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    return sleep
 
 
 def client_with(handler: httpx.MockTransport) -> GitHubClient:
@@ -86,6 +99,40 @@ async def test_a_cold_process_learns_the_budget_is_gone_from_the_403() -> None:
     client = client_with(httpx.MockTransport(handle))
     with pytest.raises(RateLimited):
         await client.list_issues()
+
+
+async def test_pacing_costs_nothing_while_the_budget_is_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A full budget spread over a full hour is under a second a read. Taking
+    that gap would only slow every sweep down without changing whether the hour
+    survives, so it is not taken."""
+    slept: list[float] = []
+    monkeypatch.setattr(github_module.asyncio, "sleep", _record(slept))
+
+    client = client_with(httpx.MockTransport(lambda request: httpx.Response(204)))
+    client._remaining, client._resets_at = 5000, time.time() + 3600
+    for _ in range(20):
+        await client._pace()
+
+    assert slept == []
+
+
+async def test_pacing_throttles_a_thin_budget_to_fit_the_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With 200 requests and most of an hour to cover, reads have to be spaced
+    out — the alternative is spending them in a minute and going blind."""
+    slept: list[float] = []
+    monkeypatch.setattr(github_module.asyncio, "sleep", _record(slept))
+
+    client = client_with(httpx.MockTransport(lambda request: httpx.Response(204)))
+    client._remaining, client._resets_at = 200, time.time() + 3600
+    await client._pace()
+    await client._pace()
+
+    # 3600s over the 100 requests not held back for writes.
+    assert slept and slept[-1] == pytest.approx(36, abs=1)
 
 
 async def test_an_exhausted_budget_stops_everything_and_says_when_it_returns() -> None:

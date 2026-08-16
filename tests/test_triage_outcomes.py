@@ -6,6 +6,7 @@ say-so, so both are worth pinning down.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from orchestrator.config import Settings
@@ -131,6 +132,8 @@ def poller_for(devin: FakeDevin, store: Store, dispatcher: Dispatcher) -> Poller
     poller.dispatcher = dispatcher
     poller.metrics = MetricsRegistry()
     poller._consumed = set()
+    poller._swept_through = None
+    poller._last_full_sweep = 0.0
     return poller
 
 
@@ -219,7 +222,16 @@ class ReconcileGitHub(FakeGitHub):
         super().__init__()
         self.issues = issues
 
-    async def list_issues(self, state: str = "all", limit: int = 100) -> list[Issue]:
+    def server_time(self) -> float:
+        return time.time()
+
+    @property
+    def budget(self) -> dict[str, Any]:
+        return {}
+
+    async def list_issues(
+        self, state: str = "all", limit: int = 100, since: str | None = None
+    ) -> list[Issue]:
         return self.issues
 
     async def list_open_prs(self) -> list[dict[str, Any]]:

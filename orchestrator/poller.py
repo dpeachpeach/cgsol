@@ -23,6 +23,7 @@ import contextlib
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from orchestrator.config import Settings
@@ -31,10 +32,18 @@ from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient, RateLimited
 from orchestrator.labels import TERMINAL_STATES, State
 from orchestrator.metrics import MetricsRegistry
-from orchestrator.models import IssueMeta, SessionInfo, Verdict
+from orchestrator.models import IssueCard, IssueMeta, SessionInfo, Verdict
 from orchestrator.state import Store
 
 log = logging.getLogger("cgsol.poller")
+
+#: The states whose next move is CI's to make. Anywhere else the last known
+#: checks are already in the store and re-reading them cannot change an answer,
+#: and check-runs is the most expensive read in the loop: one request per PR per
+#: sweep, uncacheable for as long as CI is churning.
+CI_WATCH_STATES: frozenset[State] = frozenset(
+    {State.DEVIN_PR_OPEN, State.CI_FAILING, State.DEVIN_FIXING}
+)
 
 
 class Poller:
@@ -55,6 +64,9 @@ class Poller:
         self.metrics = metrics
         self._consumed: set[str] = set()
         self._tasks: list[asyncio.Task[None]] = []
+        #: On GitHub's clock, from the sweep that read it.
+        self._swept_through: float | None = None
+        self._last_full_sweep: float = 0.0
 
     # --- lifecycle ------------------------------------------------------------
 
@@ -102,6 +114,7 @@ class Poller:
                 await self.poll_sessions()
                 await self.dispatcher.dispatch_ready()
                 self.metrics.sample(self.store.cards(), self.store.sessions())
+                self.store.budget = self.github.budget
                 await self.store.publish("tick", {"synced_at": time.time()})
             except asyncio.CancelledError:
                 raise
@@ -250,9 +263,19 @@ class Poller:
 
     # --- reconcile ------------------------------------------------------------
 
-    async def reconcile(self) -> None:
-        """Full sweep: GitHub is authoritative, this makes the projection agree."""
-        issues = await self.github.list_issues(state="all", limit=100)
+    async def reconcile(self, full: bool | None = None) -> None:
+        """Make the projection agree with GitHub, reading as little as possible.
+
+        The steady-state sweep asks only for issues touched since the last one.
+        A periodic full sweep still runs, because `since` cannot report what is
+        no longer there, and an issue the projection never saw is not 'touched'.
+        """
+        full = self._full_sweep_due() if full is None else full
+        # Read the clock before the request, not after: anything that changes
+        # while it is in flight has to fall inside the next window.
+        swept_at = self.github.server_time()
+        since = None if full else _iso8601(self._swept_through)
+        issues = await self.github.list_issues(state="all", limit=100, since=since)
         prs = await self.github.list_open_prs()
         pr_by_issue = _index_prs(prs)
 
@@ -263,14 +286,6 @@ class Poller:
                 found = await self.github.find_meta_comment(issue.number)
                 meta = found[1] if found else IssueMeta()
             card = self.store.upsert_issue(issue, meta)
-            pr = pr_by_issue.get(issue.number)
-            if pr is not None:
-                card.pr_number = pr["number"]
-                card.meta.pr_url = pr["html_url"]
-                card.pr_merged = bool(pr.get("merged_at"))
-                checks = await self.github.check_runs_for_ref(pr["head"]["sha"])
-                self.store.set_checks(issue.number, checks)
-                await self.dispatcher.evaluate_ci(card, checks, card.pr_merged)
             # A close is only this pipeline's outcome if this pipeline was
             # working the issue. Closing something it never touched is a
             # maintainer clearing their own backlog, and closing something
@@ -283,9 +298,63 @@ class Poller:
             ):
                 card.state = State.DONE
 
+        # PRs are one list call regardless, and CI moving does not touch the
+        # issue it belongs to, so this runs over every linked PR rather than
+        # only the issues this sweep happened to list.
+        for number, pr in pr_by_issue.items():
+            await self._reconcile_pr(number, pr)
+
+        self._swept_through = swept_at - self.settings.reconcile_overlap_seconds
+        if full:
+            self._last_full_sweep = swept_at
+            # Only when the listing was not truncated: past the page cap the
+            # issues that did not come back are not gone, just unread.
+            if len(issues) < 100:
+                for number in self.store.retain({issue.number for issue in issues}):
+                    log.info("dropping card #%s: no longer on the fork", number)
+
         await self.poll_sessions()
         self.metrics.sample(self.store.cards(), self.store.sessions())
+        self.store.budget = self.github.budget
         await self.store.publish("reconciled", self.store.snapshot())
+
+    def _full_sweep_due(self) -> bool:
+        if self._swept_through is None:
+            return True
+        return (
+            self.github.server_time() - self._last_full_sweep
+            >= self.settings.full_reconcile_seconds
+        )
+
+    async def _reconcile_pr(self, number: int, pr: dict[str, Any]) -> None:
+        card = self.store.card(number)
+        if card is None:
+            return
+        card.pr_number = pr["number"]
+        card.meta.pr_url = pr["html_url"]
+        card.pr_merged = bool(pr.get("merged_at"))
+        if not _checks_can_still_move(card, pr):
+            # A merged PR still has to land the card on `done`; it just does not
+            # need its checks re-read to say so.
+            if card.pr_merged:
+                await self.dispatcher.evaluate_ci(card, card.checks, True)
+            return
+        checks = await self.github.check_runs_for_ref(pr["head"]["sha"])
+        self.store.set_checks(number, checks)
+        await self.dispatcher.evaluate_ci(card, checks, card.pr_merged)
+
+
+def _checks_can_still_move(card: IssueCard, pr: dict[str, Any]) -> bool:
+    """Whether reading this PR's check runs can still change anything."""
+    if pr.get("merged_at") or pr.get("state") not in (None, "open"):
+        return False
+    return card.state in CI_WATCH_STATES
+
+
+def _iso8601(when: float | None) -> str | None:
+    if when is None:
+        return None
+    return datetime.fromtimestamp(when, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 _CLOSES_RE = re.compile(r"\b(?:closes|fixes|resolves)\s+#(\d+)", re.IGNORECASE)

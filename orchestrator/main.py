@@ -94,6 +94,7 @@ async def healthz() -> Response:
             "mode": "replay" if orchestrator.settings.replay else "live",
             "issues": len(orchestrator.store.cards()),
             "subscribers": orchestrator.store.subscriber_count,
+            "budget": orchestrator.github.budget,
         }
     )
 
