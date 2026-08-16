@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     #: wrong answer is not less likely than a hesitant right one. Raise it to
     #: buy review at the cost of throughput.
     confidence_threshold: float = 0.0
+    #: Devin parks a finished session at `waiting_for_user` forever. Once its
+    #: result is banked there is nobody to answer, and it is holding a slot.
+    terminate_consumed_sessions: bool = True
     max_ci_rounds: int = 3
     max_concurrent_workers: int = 6
     scout_batch_max: int = 25

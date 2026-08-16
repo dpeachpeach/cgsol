@@ -109,6 +109,7 @@ class FakeDevin:
     def __init__(self, detail: SessionInfo) -> None:
         self.detail = detail
         self.gets = 0
+        self.terminated: list[str] = []
 
     async def list_by_tags(self, tags: list[str]) -> list[SessionInfo]:
         return [self.detail.model_copy(update={"structured_output": None})]
@@ -116,6 +117,10 @@ class FakeDevin:
     async def get_session(self, session_id: str) -> SessionInfo:
         self.gets += 1
         return self.detail
+
+    async def terminate(self, session_id: str) -> bool:
+        self.terminated.append(session_id)
+        return True
 
 
 def poller_for(devin: FakeDevin, store: Store, dispatcher: Dispatcher) -> Poller:
@@ -143,6 +148,8 @@ async def test_a_waiting_scout_holding_verdicts_is_not_left_holding_them() -> No
 
     await poller.poll_sessions()
     assert devin.gets == 1  # consumed once, then never fetched again
+    # and closed, rather than left waiting for a reply from a state machine
+    assert devin.terminated == ["devin-1"]
 
 
 async def test_a_half_written_batch_is_applied_but_not_written_off() -> None:
@@ -166,6 +173,7 @@ async def test_a_half_written_batch_is_applied_but_not_written_off() -> None:
 
     await poller.poll_sessions()
     assert devin.gets == 2  # still being polled: #8's verdict may yet arrive
+    assert devin.terminated == []  # and not closed out from under the batch
 
 
 async def test_an_eligible_verdict_goes_to_a_worker_not_a_human_by_default() -> None:

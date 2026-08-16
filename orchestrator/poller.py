@@ -28,7 +28,7 @@ from typing import Any
 from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
-from orchestrator.github import GitHubClient
+from orchestrator.github import GitHubClient, RateLimited
 from orchestrator.labels import TERMINAL_STATES, State
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import IssueMeta, SessionInfo, Verdict
@@ -82,6 +82,9 @@ class Poller:
                 await self.store.publish("tick", {"synced_at": time.time()})
             except asyncio.CancelledError:
                 raise
+            except RateLimited as limit:
+                await self._wait_out(limit)
+                continue
             except Exception:  # keep the loop alive; a bad cycle is not fatal
                 log.exception("session poll failed")
             await asyncio.sleep(self._interval())
@@ -93,8 +96,19 @@ class Poller:
                 await self.reconcile()
             except asyncio.CancelledError:
                 raise
+            except RateLimited as limit:
+                await self._wait_out(limit)
             except Exception:
                 log.exception("reconcile failed")
+
+    async def _wait_out(self, limit: RateLimited) -> None:
+        """Sleep off an exhausted budget rather than spending the next hour
+        collecting 403s. A projection that stops updating for a while is
+        recoverable; one built from failed reads is not."""
+        delay = max(30.0, limit.resets_at - time.time() + 5)
+        log.warning("github rate limited; pausing polling for %.0fs", delay)
+        await self.store.publish("rate_limited", {"resets_at": limit.resets_at})
+        await asyncio.sleep(delay)
 
     def _interval(self) -> float:
         sessions = [s for s in self.store.sessions() if not s.terminal]
@@ -129,6 +143,18 @@ class Poller:
                 and await self._on_settled(session)
             ):
                 self._consumed.add(session.session_id)
+                await self._retire(session)
+
+    async def _retire(self, session: SessionInfo) -> None:
+        """Close a session we are finished reading. Best-effort: the result is
+        already banked, so a failure here costs a held slot, not correctness."""
+        if session.terminal or not self.settings.terminate_consumed_sessions:
+            return
+        try:
+            if await self.devin.terminate(session.session_id):
+                self.store.upsert_session(session.model_copy(update={"status": "exit"}))
+        except Exception:
+            log.warning("could not terminate %s", session.session_id, exc_info=True)
 
     async def _adopt(self, session: SessionInfo) -> None:
         number = session.issue_number
