@@ -130,7 +130,7 @@ Three actors write labels, so the receiver has to tell them apart by
 orchestrator itself. As a PAT the orchestrator wore the human's login and was
 indistinguishable from them; as an App it writes as `<app-slug>[bot]`. Both
 identities are treated as "not human intent" — they do not count as human turns
-against the autonomy metric — but our own writes still start triage, because
+on the card — but our own writes still start triage, because
 `make seed` files the backlog under exactly that identity.
 
 ## Running it
@@ -210,10 +210,13 @@ make check       # ruff, mypy, pytest, tsc, eslint
 Status is not effectiveness. The board is status; the metrics tab answers "how
 would I know this is working":
 
-- **autonomy rate** — merged PRs that needed zero human turns
-- **ACU per merged PR**, trended
-- **CI rounds to green** — first-pass quality, and the number that should fall as
-  the playbooks get tuned
+- **ACU per ready-to-merge PR** — every ACU the pipeline spent, including triage
+  and the issues it declined, over the PRs whose CI is green. Cost per outcome
+  rather than cost per attempt, which is the number to hold against engineer-hours
+- **average age of open issues**, measured from when the bug was first reported
+  upstream — the import footer's date, not when the issue was copied onto this
+  fork, which would report hours on a backlog that is months old
+- **issue → PR** — how long a worker takes, on this fork's clock
 - funnel from ingested to merged, and spend-by-tier next to merge-rate-by-tier: if
   hard tier burns 60% of the budget for a 30% merge rate, that is a finding
 - escalation taxonomy, which is the input to the next round of knowledge notes

@@ -61,3 +61,22 @@ def test_an_unparseable_timestamp_is_a_missing_measurement_not_a_zero() -> None:
     headline = compute([card(1, created_at="not a date")], [])["headline"]
     assert headline["open_count"] == 0
     assert headline["open_age_seconds"] is None
+
+
+def test_open_age_prefers_when_the_bug_was_first_reported_upstream() -> None:
+    """The fork's `created_at` is when the issue was copied in — hours, on a
+    backlog that is months old. The import footer carries the real date."""
+    cards = [card(1, created_at=stamp(1), filed_at=stamp(500))]
+    headline = compute(cards, [])["headline"]
+    assert headline["open_age_seconds"] is not None
+    assert abs(headline["open_age_seconds"] - 500 * 3600) < 60
+
+
+def test_issue_to_pr_still_measures_the_fork_clock() -> None:
+    """Elapsed time from *this* pipeline's point of view: an upstream filing
+    date would make every worker look like it took nine months."""
+    cards = [
+        card(1, created_at=stamp(10), filed_at=stamp(5000), meta=IssueMeta(pr_opened_at=stamp(9)))
+    ]
+    headline = compute(cards, [])["headline"]
+    assert headline["issue_to_pr_seconds"] == 3600

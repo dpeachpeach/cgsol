@@ -85,9 +85,8 @@ export interface Snapshot {
 
 export interface Metrics {
   headline: {
-    autonomy_rate: number | null;
-    acu_per_merged_pr: number | null;
-    ci_rounds_to_green: number | null;
+    acu_per_ready_pr: number | null;
+    ready_pr_count: number;
     total_acu: number;
     build_acu: number;
     merged: number;
@@ -113,9 +112,7 @@ export interface Metrics {
   sessions: { active: number; by_role: Record<string, number> };
   series: {
     ts: number;
-    autonomy_rate: number | null;
-    acu_per_merged_pr: number | null;
-    ci_rounds_to_green: number | null;
+    acu_per_ready_pr: number | null;
     open_sessions: number;
     total_acu: number;
   }[];

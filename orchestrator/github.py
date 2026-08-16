@@ -397,14 +397,26 @@ class GitHubClient:
         return int(response.json()["number"])
 
 
+#: The footer `seed/sanitize.py` writes on every imported issue:
+#: `_Imported from apache/superset issue 36406. Originally filed 2025-12-03._`
+_FILED_RE = re.compile(r"Originally filed (\d{4}-\d{2}-\d{2})")
+
+
+def _filed_at(body: str) -> str:
+    match = _FILED_RE.search(body)
+    return f"{match.group(1)}T00:00:00Z" if match else ""
+
+
 def _to_issue(raw: dict[str, Any]) -> Issue:
+    body = raw.get("body") or ""
     return Issue(
         number=raw["number"],
         title=raw.get("title", ""),
-        body=raw.get("body") or "",
+        body=body,
         labels=[label["name"] for label in raw.get("labels", [])],
         state=raw.get("state", "open"),
         html_url=raw.get("html_url", ""),
         created_at=raw.get("created_at", ""),
+        filed_at=_filed_at(body),
         updated_at=raw.get("updated_at", ""),
     )

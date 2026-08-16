@@ -19,6 +19,10 @@ class Issue(BaseModel):
     state: str = "open"
     html_url: str = ""
     created_at: str = ""
+    #: When the bug was first reported upstream, from the import footer in the
+    #: body. `created_at` on this fork is when it was copied in, which is a fact
+    #: about the demo rather than about the backlog.
+    filed_at: str = ""
     updated_at: str = ""
     has_linked_pr: bool = False
 
@@ -136,6 +140,7 @@ class IssueCard(BaseModel):
     title: str
     html_url: str
     created_at: str = ""
+    filed_at: str = ""
     state: State | None = None
     tier: Tier | None = None
     labels: list[str] = Field(default_factory=list)

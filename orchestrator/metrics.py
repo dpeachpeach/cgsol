@@ -40,9 +40,7 @@ FUNNEL_STAGES = [
 @dataclass
 class Sample:
     ts: float
-    autonomy_rate: float | None
-    acu_per_merged_pr: float | None
-    ci_rounds_to_green: float | None
+    acu_per_ready_pr: float | None
     open_sessions: int
     total_acu: float
 
@@ -68,9 +66,7 @@ class MetricsRegistry:
         headline = computed["headline"]
         sample = Sample(
             ts=time.time(),
-            autonomy_rate=headline["autonomy_rate"],
-            acu_per_merged_pr=headline["acu_per_merged_pr"],
-            ci_rounds_to_green=headline["ci_rounds_to_green"],
+            acu_per_ready_pr=headline["acu_per_ready_pr"],
             open_sessions=sum(1 for session in sessions if not session.terminal),
             total_acu=headline["total_acu"],
         )
@@ -96,6 +92,22 @@ def _epoch(stamp: str | None) -> float | None:
         return None
 
 
+def _ci_green(card: IssueCard) -> bool:
+    """A PR a maintainer could merge: the checks concluded and none of them
+    failed. Read off the checks rather than the card's state, so a merged PR
+    still counts and an escalation does not silently un-count one."""
+    if not card.meta.pr_url:
+        return False
+    if card.pr_merged or card.state is State.DONE:
+        return True
+    if not card.checks:
+        return False
+    return all(
+        check.status == "completed" and check.conclusion in ("success", "neutral", "skipped")
+        for check in card.checks
+    )
+
+
 def compute(
     cards: list[IssueCard],
     sessions: list[SessionInfo],
@@ -108,25 +120,14 @@ def compute(
     retired = [card for card in cards if card.state is State.CAN_CLOSE_ISSUE]
     with_pr = [card for card in cards if card.meta.pr_url]
 
-    # Autonomy: a merged PR that took zero human turns. Not "no human looked at
-    # it" — review is a human turn we want; this counts interventions that the
-    # pipeline needed to make progress.
-    autonomous = [
-        card for card in merged if card.meta.human_turns == 0 and not card.meta.escalation
-    ]
-    autonomy_rate = len(autonomous) / len(merged) if merged else None
-
     total_acu = sum(session.acus_consumed for session in pipeline_sessions)
-    merged_acu = sum(card.meta.acus for card in merged)
-    acu_per_merged_pr = merged_acu / len(merged) if merged else None
 
-    ci_rounds_to_green = _mean(
-        [
-            float(card.meta.ci_rounds)
-            for card in cards
-            if card.state in (State.HUMAN_REVIEW, State.DONE) and card.meta.pr_url
-        ]
-    )
+    # The cost story in one number: everything the pipeline spent, over the
+    # things it produced that a maintainer can actually merge. Triage, declines
+    # and failed attempts are in the numerator on purpose — they are what a
+    # green PR costs, and an average over the winners alone would flatter it.
+    ready = [card for card in cards if _ci_green(card)]
+    acu_per_ready_pr = total_acu / len(ready) if ready else None
 
     funnel = {
         "ingested": len(cards),
@@ -153,21 +154,22 @@ def compute(
         }
 
     # Issue opened -> its PR opened, from GitHub's own timestamps rather than
-    # from dispatch, so the figure survives a lost session and a restart. On
-    # this fork `created_at` is when the issue was copied in, not its upstream
-    # age, which is why the dashboard says so next to the number.
+    # from dispatch, so the figure survives a lost session and a restart.
     issue_to_pr: list[float] = []
     open_ages: list[float] = []
     now = time.time()
     for card in cards:
         created = _epoch(card.created_at)
-        if created is None:
-            continue
-        opened = _epoch(card.meta.pr_opened_at)
-        if opened is not None and opened >= created:
-            issue_to_pr.append(opened - created)
-        if not card.pr_merged and card.state is not State.DONE:
-            open_ages.append(now - created)
+        if created is not None:
+            opened = _epoch(card.meta.pr_opened_at)
+            if opened is not None and opened >= created:
+                issue_to_pr.append(opened - created)
+        # Age is measured from when the bug was first reported upstream, not
+        # from when it was copied onto the fork: the backlog it describes is
+        # months old, and the fork's own clock would report hours.
+        filed = _epoch(card.filed_at) or created
+        if filed is not None and not card.pr_merged and card.state is not State.DONE:
+            open_ages.append(now - filed)
 
     escalation_counts = Counter(escalations or {})
     for card in cards:
@@ -176,9 +178,8 @@ def compute(
 
     return {
         "headline": {
-            "autonomy_rate": autonomy_rate,
-            "acu_per_merged_pr": acu_per_merged_pr,
-            "ci_rounds_to_green": ci_rounds_to_green,
+            "acu_per_ready_pr": acu_per_ready_pr,
+            "ready_pr_count": len(ready),
             "total_acu": round(total_acu, 2),
             "build_acu": round(sum(s.acus_consumed for s in sessions if BUILD_TAG in s.tags), 2),
             "merged": len(merged),

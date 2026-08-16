@@ -62,19 +62,9 @@ export function MetricsPanel({
       </div>
       <div className="metrics">
         <Metric
-          label="Autonomy rate"
-          value={pct(headline.autonomy_rate)}
-          sub="merged PRs needing zero human turns"
-        />
-        <Metric
-          label="ACU per merged PR"
-          value={num(headline.acu_per_merged_pr)}
-          sub={`${headline.merged} merged`}
-        />
-        <Metric
-          label="CI rounds to green"
-          value={num(headline.ci_rounds_to_green, 1)}
-          sub="first-pass quality; should trend down"
+          label="ACU per ready-to-merge PR"
+          value={num(headline.acu_per_ready_pr)}
+          sub={`all pipeline spend ÷ ${headline.ready_pr_count} PRs with CI green`}
         />
         <Metric
           label="Retired without code"
@@ -89,7 +79,7 @@ export function MetricsPanel({
         <Metric
           label="Average age, open issues"
           value={duration(headline.open_age_seconds)}
-          sub={`${headline.open_count} open · since the issue landed on this fork`}
+          sub={`${headline.open_count} open · since first reported upstream`}
         />
         <Metric
           label="Pipeline ACU"
