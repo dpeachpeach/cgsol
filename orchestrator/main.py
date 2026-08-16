@@ -49,6 +49,16 @@ def get_orchestrator() -> Orchestrator:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global orchestrator
     orchestrator = Orchestrator()
+    settings = get_settings()
+    # Announce what it is about to be allowed to spend. A pause that was
+    # configured but not delivered to the process is invisible otherwise.
+    log.info(
+        "starting: repo=%s replay=%s workers=%s triage=%s",
+        settings.github_repo,
+        settings.replay,
+        settings.max_concurrent_workers,
+        settings.triage_mode,
+    )
     await orchestrator.start()
     try:
         yield
