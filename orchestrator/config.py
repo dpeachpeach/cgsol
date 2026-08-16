@@ -92,9 +92,17 @@ class Settings(BaseSettings):
 
     # --- Timing (seconds) -----------------------------------------------------
     batch_window_seconds: float = 60
-    poll_active_seconds: float = 25
+    poll_active_seconds: float = 15
     poll_waiting_seconds: float = 60
     reconcile_seconds: float = 180
+    #: How often a sweep re-reads every issue instead of only the ones GitHub
+    #: says moved. An incremental sweep cannot see a deletion, a card the
+    #: projection never had, or a relabel that raced the clock.
+    full_reconcile_seconds: float = 3600
+    #: Rewind the `since` filter by this much. Two clocks and a request in
+    #: flight make equality the wrong test; re-reading a few unchanged issues
+    #: is cheaper than missing one.
+    reconcile_overlap_seconds: float = 60
     delivery_ttl_seconds: float = 900
 
     # --- Modes ----------------------------------------------------------------
