@@ -52,6 +52,16 @@ async def test_a_cadence_change_still_reaches_the_frontend() -> None:
     assert seen[0][0] == "config.reloaded"
 
 
+def test_live_does_not_assume_permission_to_spend() -> None:
+    """A fresh clone pointed at a real fork dispatches nothing on its own: the
+    poll loop calls `dispatch_ready`, so any other default spends on boot."""
+    assert Settings(replay=False, _env_file=None).max_concurrent_workers == 0
+    explicit = Settings(replay=False, max_concurrent_workers=3, _env_file=None)
+    assert explicit.max_concurrent_workers == 3
+    # Replay sessions are simulated, so the demo still moves.
+    assert Settings(replay=True, _env_file=None).max_concurrent_workers > 0
+
+
 async def test_unknown_keys_cannot_reach_credentials_or_endpoints() -> None:
     service = service_for()
     base = service.settings.devin_api_base
