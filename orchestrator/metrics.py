@@ -138,8 +138,11 @@ def compute(
     # things it produced that a maintainer can actually merge. Triage, declines
     # and failed attempts are in the numerator on purpose — they are what a
     # green PR costs, and an average over the winners alone would flatter it.
+    #
+    # A zero total means the API reported no ACUs, not that the run was free —
+    # so it is a missing measurement rather than a suspiciously good number.
     ready = [card for card in cards if _ci_green(card)]
-    acu_per_ready_pr = total_acu / len(ready) if ready else None
+    acu_per_ready_pr = total_acu / len(ready) if ready and total_acu else None
 
     funnel = {
         "ingested": len(cards),
