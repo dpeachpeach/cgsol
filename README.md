@@ -25,7 +25,15 @@ safe.
 needs-triage → devin-eligible → devin-working → devin-pr-open → ci-failing ⇄ devin-fixing
                                                              ↘ human-review → done
              ↘ devin-declined                  ↘ devin-blocked
+             ↘ ready-to-close
 ```
+
+`ready-to-close` separates "there is no work here" from "an agent should not do
+this work". A stale backlog is full of issues already fixed upstream or
+duplicated elsewhere; retiring one costs a few minutes of reading and no code,
+which makes it the cheapest thing the pipeline produces. Triage only reaches it
+with evidence — the file it read and what that file contains now — and a human
+still does the closing.
 
 ## Verification
 

@@ -7,6 +7,7 @@ export type State =
   | "devin-fixing"
   | "human-review"
   | "devin-declined"
+  | "ready-to-close"
   | "devin-blocked"
   | "done";
 
@@ -78,6 +79,7 @@ export interface Metrics {
     total_acu: number;
     build_acu: number;
     merged: number;
+    retired: number;
   };
   funnel: Record<string, number>;
   by_tier: Record<

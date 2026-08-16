@@ -46,6 +46,11 @@ export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
           sub="first-pass quality; should trend down"
         />
         <Metric
+          label="Retired without code"
+          value={String(headline.retired ?? 0)}
+          sub="already fixed or duplicate; awaiting a human close"
+        />
+        <Metric
           label="Pipeline ACU"
           value={num(headline.total_acu)}
           sub={`build sessions: ${num(headline.build_acu)} (counted separately)`}

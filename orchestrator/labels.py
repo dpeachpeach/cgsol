@@ -14,6 +14,7 @@ class State(str, Enum):
     DEVIN_FIXING = "devin-fixing"
     HUMAN_REVIEW = "human-review"
     DEVIN_DECLINED = "devin-declined"
+    READY_TO_CLOSE = "ready-to-close"
     DEVIN_BLOCKED = "devin-blocked"
     DONE = "done"
 
@@ -39,7 +40,15 @@ class Tier(str, Enum):
 
 ALL_STATE_LABELS: frozenset[str] = frozenset(state.value for state in State)
 
-TERMINAL_STATES: frozenset[State] = frozenset({State.DONE, State.DEVIN_DECLINED})
+TERMINAL_STATES: frozenset[State] = frozenset(
+    {State.DONE, State.DEVIN_DECLINED, State.READY_TO_CLOSE}
+)
+
+#: Decline reasons that mean "there is no work here" rather than "an agent should
+#: not do this work". They retire an issue instead of shelving it: the cheapest
+#: thing this pipeline produces is a backlog that shrank without anyone writing
+#: code. A human still does the closing.
+RETIREMENT_REASONS: frozenset[str] = frozenset({"already-fixed", "duplicate"})
 
 #: States the orchestrator may move an issue *out of*. Anything else is either
 #: terminal or belongs to a human.
@@ -57,7 +66,13 @@ ORCHESTRATOR_OWNED: frozenset[State] = frozenset(
 #: Legal transitions. Enforced so a webhook race cannot walk an issue backwards.
 TRANSITIONS: dict[State, frozenset[State]] = {
     State.NEEDS_TRIAGE: frozenset(
-        {State.DEVIN_ELIGIBLE, State.DEVIN_DECLINED, State.HUMAN_REVIEW, State.DEVIN_BLOCKED}
+        {
+            State.DEVIN_ELIGIBLE,
+            State.DEVIN_DECLINED,
+            State.READY_TO_CLOSE,
+            State.HUMAN_REVIEW,
+            State.DEVIN_BLOCKED,
+        }
     ),
     State.DEVIN_ELIGIBLE: frozenset(
         {State.DEVIN_WORKING, State.HUMAN_REVIEW, State.DEVIN_BLOCKED, State.NEEDS_TRIAGE}
@@ -76,7 +91,9 @@ TRANSITIONS: dict[State, frozenset[State]] = {
         {State.DONE, State.DEVIN_ELIGIBLE, State.NEEDS_TRIAGE, State.DEVIN_BLOCKED}
     ),
     State.DEVIN_BLOCKED: frozenset({State.NEEDS_TRIAGE, State.DEVIN_ELIGIBLE, State.HUMAN_REVIEW}),
-    State.DEVIN_DECLINED: frozenset({State.NEEDS_TRIAGE}),
+    State.DEVIN_DECLINED: frozenset({State.NEEDS_TRIAGE, State.READY_TO_CLOSE}),
+    # A human either closes it, or disagrees and sends it back for work.
+    State.READY_TO_CLOSE: frozenset({State.DONE, State.NEEDS_TRIAGE, State.HUMAN_REVIEW}),
     State.DONE: frozenset(),
 }
 

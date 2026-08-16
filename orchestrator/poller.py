@@ -7,7 +7,13 @@ That is the intended pattern, not a fallback hack — a webhook is a hint that
 state changed, never the record of what it changed to.
 
 Polling is one tag-filtered list call per cycle, not one GET per session, and
-terminal sessions are never polled again.
+sessions whose result has been consumed are never fetched again.
+
+A session's result is consumed when it *settles*, which is not the same as
+finishing: Devin idles at ``waiting_for_user`` when it has said its piece and
+nobody replies, and only reaches ``finished`` if something puts it to sleep. A
+scout that produced its verdicts and then waited would otherwise sit there
+holding them forever.
 """
 
 from __future__ import annotations
@@ -47,7 +53,7 @@ class Poller:
         self.store = store
         self.dispatcher = dispatcher
         self.metrics = metrics
-        self._handled_terminal: set[str] = set()
+        self._consumed: set[str] = set()
         self._tasks: list[asyncio.Task[None]] = []
 
     # --- lifecycle ------------------------------------------------------------
@@ -107,9 +113,13 @@ class Poller:
         for session in sessions:
             previous = self.store.session(session.session_id)
             self.store.upsert_session(session)
-            if session.terminal and session.session_id not in self._handled_terminal:
-                self._handled_terminal.add(session.session_id)
-                await self._on_terminal(session)
+            settled = session.terminal or session.waiting
+            if settled and session.session_id not in self._consumed:
+                # One GET, and only for a session that has stopped: a waiting
+                # session may be holding a result or may just be blocked, and
+                # the list payload does not carry structured output either way.
+                if await self._on_settled(session):
+                    self._consumed.add(session.session_id)
             elif previous is None and session.origin == "automation":
                 # Discovered, not dispatched: an Automation created this session
                 # and nobody told us. Convergence, not notification.
@@ -128,7 +138,14 @@ class Poller:
             {"issue": number, "session_id": session.session_id, "role": session.role},
         )
 
-    async def _on_terminal(self, summary: SessionInfo) -> None:
+    async def _on_settled(self, summary: SessionInfo) -> bool:
+        """Consume a stopped session's result. False means try again next cycle.
+
+        A session that stopped without a result is not necessarily done with:
+        ``waiting_for_user`` is also how Devin asks a question mid-flight, and
+        answering it later produces the output. Only a terminal session's
+        emptiness is final.
+        """
         detail = await self.devin.get_session(summary.session_id)
         self.store.upsert_session(detail)
         output: dict[str, Any] | None = detail.structured_output
@@ -137,24 +154,29 @@ class Poller:
         if role == "scout":
             verdicts = _parse_verdicts(output)
             if not verdicts:
-                log.warning("scout %s produced no verdicts", detail.session_id)
-                return
+                if detail.terminal:
+                    log.warning("scout %s produced no verdicts", detail.session_id)
+                    return True
+                return False
             await self.dispatcher.apply_verdicts(verdicts)
             await self.store.publish("scout.finished", {"verdicts": len(verdicts)})
-            return
+            return True
 
         number = detail.issue_number
         card = self.store.card(number) if number is not None else None
         if card is None:
-            return
+            return True
         card.meta.acus = max(card.meta.acus, detail.acus_consumed)
         if detail.status == "error":
             await self.dispatcher.escalate(card, "session-error", State.DEVIN_BLOCKED)
-            return
+            return True
+        if output is None and not detail.terminal:
+            return False
         if role == "ci-fix":
             await self.dispatcher.on_ci_fix_finished(card, output)
         elif role == "worker":
             await self.dispatcher.on_worker_finished(card, output)
+        return True
 
     # --- reconcile ------------------------------------------------------------
 

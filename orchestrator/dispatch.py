@@ -21,7 +21,13 @@ from typing import Any
 from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.github import GitHubClient
-from orchestrator.labels import EscalationReason, State, Tier, can_transition
+from orchestrator.labels import (
+    RETIREMENT_REASONS,
+    EscalationReason,
+    State,
+    Tier,
+    can_transition,
+)
 from orchestrator.metrics import PIPELINE_TAG, MetricsRegistry
 from orchestrator.models import CheckRun, Issue, IssueCard, TriageEstimate, Verdict
 from orchestrator.prompts import ci_autofix_prompt, scout_prompt, worker_prompt
@@ -168,6 +174,19 @@ class Dispatcher:
         tier = verdict.tier_enum
         if not verdict.eligible or tier is None:
             reason = verdict.decline_reason if verdict.decline_reason != "none" else "out-of-scope"
+            if reason in RETIREMENT_REASONS and verdict.reasoning.strip():
+                # "Already fixed" without evidence is worse than no verdict: it
+                # invites a human to close a live bug on an agent's say-so.
+                await self._move(card, State.READY_TO_CLOSE)
+                await self.github.upsert_meta(
+                    card.number,
+                    card.meta,
+                    f"**Ready to close** — `{reason}` (confidence {verdict.confidence:.2f}). "
+                    "No code change appears to be needed; a human decides whether to "
+                    f"close.\n\n_Evidence:_ {verdict.reasoning}",
+                )
+                self.metrics.record_escalation(f"ready-to-close:{reason}")
+                return
             await self._move(card, State.DEVIN_DECLINED)
             await self.github.upsert_meta(
                 card.number,
