@@ -345,6 +345,12 @@ class Dispatcher:
         await self.dispatch_ci_fix(card, failing)
 
     async def dispatch_ci_fix(self, card: IssueCard, failing: list[CheckRun]) -> bool:
+        # An autofix is a worker by another name: it spends the same way, so it
+        # answers to the same cap. Otherwise the only way to stop spending is to
+        # stop the process.
+        if self.store.active_worker_count() >= self.settings.max_concurrent_workers:
+            log.info("at worker capacity: not starting a CI autofix for #%s", card.number)
+            return False
         spec = self.resources.playbooks.get("ci_autofix")
         if spec is None or self.settings.dry_run:
             return False

@@ -19,7 +19,7 @@ from orchestrator.config import Settings
 from orchestrator.dispatch import Dispatcher
 from orchestrator.labels import State
 from orchestrator.metrics import MetricsRegistry
-from orchestrator.models import CheckRun, Issue, SessionInfo
+from orchestrator.models import CheckRun, Issue, IssueMeta, SessionInfo
 from orchestrator.poller import Poller
 from orchestrator.state import Store
 
@@ -270,3 +270,17 @@ async def test_a_card_that_has_not_noticed_its_pr_is_still_promoted() -> None:
     assert github.check_refs == ["sha32"]
     card = poller.store.card(24)
     assert card is not None and card.state is State.DEVIN_PR_OPEN
+
+
+async def test_a_zero_worker_cap_also_stops_ci_autofix() -> None:
+    """`MAX_CONCURRENT_WORKERS=0` has to mean "spend nothing", not "spend only
+    on CI"."""
+    github = RecordingGitHub([issue(25, ["devin-pr-open", "tier:medium"])], [pull_request(35, 25)])
+    poller = poller_for(github, Settings(replay=True, max_concurrent_workers=0))
+    card = poller.store.upsert_issue(issue(25, ["devin-pr-open", "tier:medium"]), IssueMeta())
+
+    started = await poller.dispatcher.dispatch_ci_fix(
+        card, [CheckRun(name="jest", status="completed", conclusion="failure")]
+    )
+
+    assert started is False
