@@ -9,14 +9,17 @@ be kept every 15 seconds.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
+
+import httpx
 
 from orchestrator.config import Settings
 from orchestrator.dispatch import Dispatcher
 from orchestrator.labels import State
 from orchestrator.metrics import MetricsRegistry
-from orchestrator.models import CheckRun, Issue, SessionInfo
+from orchestrator.models import CheckRun, Issue, IssueMeta, SessionInfo
 from orchestrator.poller import Poller
 from orchestrator.state import Store
 
@@ -219,3 +222,65 @@ async def test_the_remaining_budget_reaches_the_dashboard() -> None:
     await poller.reconcile()
 
     assert poller.store.snapshot()["budget"]["remaining"] == 4900
+
+
+# --- booting into a bad network ------------------------------------------------
+
+
+class FlakyGitHub(RecordingGitHub):
+    """Fails the first sweep the way a dropped keep-alive socket does."""
+
+    def __init__(self, issues: list[Issue], failures: int) -> None:
+        super().__init__(issues)
+        self.failures = failures
+
+    async def list_issues(
+        self, state: str = "all", limit: int = 100, since: str | None = None
+    ) -> list[Issue]:
+        if self.failures > 0:
+            self.failures -= 1
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return await super().list_issues(state, limit, since)
+
+
+async def test_a_dropped_connection_on_the_first_sweep_does_not_kill_the_process() -> None:
+    """The projection is derived from GitHub, so a first sync that fails costs
+    latency, not correctness — exiting turns a lost socket into an outage."""
+    github = FlakyGitHub([issue(7)], failures=1)
+    poller = poller_for(github, Settings(replay=True, poll_waiting_seconds=0))
+
+    await poller.start()
+    try:
+        assert not poller.store.first_sync.is_set()
+        await asyncio.wait_for(poller.store.first_sync.wait(), timeout=2)
+        assert poller.store.card(7) is not None
+    finally:
+        await poller.stop()
+
+
+async def test_a_card_that_has_not_noticed_its_pr_is_still_promoted() -> None:
+    """The saving must not be taken on the transition that needs the read: a
+    worker's PR appears while the card still says `devin-eligible`, and nothing
+    but the check sweep moves it on."""
+    github = RecordingGitHub([issue(24, ["devin-eligible", "tier:medium"])], [pull_request(32, 24)])
+    poller = poller_for(github)
+
+    await poller.reconcile()
+
+    assert github.check_refs == ["sha32"]
+    card = poller.store.card(24)
+    assert card is not None and card.state is State.DEVIN_PR_OPEN
+
+
+async def test_a_zero_worker_cap_also_stops_ci_autofix() -> None:
+    """`MAX_CONCURRENT_WORKERS=0` has to mean "spend nothing", not "spend only
+    on CI"."""
+    github = RecordingGitHub([issue(25, ["devin-pr-open", "tier:medium"])], [pull_request(35, 25)])
+    poller = poller_for(github, Settings(replay=True, max_concurrent_workers=0))
+    card = poller.store.upsert_issue(issue(25, ["devin-pr-open", "tier:medium"]), IssueMeta())
+
+    started = await poller.dispatcher.dispatch_ci_fix(
+        card, [CheckRun(name="jest", status="completed", conclusion="failure")]
+    )
+
+    assert started is False

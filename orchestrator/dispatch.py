@@ -301,6 +301,16 @@ class Dispatcher:
             f"**PR opened** — {pr_url}\n\n{(output or {}).get('summary', '')}",
         )
 
+    async def adopt_pr(self, card: IssueCard, pr: dict[str, Any]) -> None:
+        """Take an open PR found on GitHub as proof the worker got that far.
+
+        The session is the usual messenger, but it is not the record: it can be
+        terminated, lost to a restart, or never polled. The PR is the record.
+        """
+        card.meta.pr_url = pr["html_url"]
+        card.meta.branch = (pr.get("head") or {}).get("ref")
+        await self._move(card, State.DEVIN_PR_OPEN)
+
     # --- CI loop --------------------------------------------------------------
 
     async def evaluate_ci(self, card: IssueCard, checks: list[CheckRun], merged: bool) -> None:
@@ -335,6 +345,12 @@ class Dispatcher:
         await self.dispatch_ci_fix(card, failing)
 
     async def dispatch_ci_fix(self, card: IssueCard, failing: list[CheckRun]) -> bool:
+        # An autofix is a worker by another name: it spends the same way, so it
+        # answers to the same cap. Otherwise the only way to stop spending is to
+        # stop the process.
+        if self.store.active_worker_count() >= self.settings.max_concurrent_workers:
+            log.info("at worker capacity: not starting a CI autofix for #%s", card.number)
+            return False
         spec = self.resources.playbooks.get("ci_autofix")
         if spec is None or self.settings.dry_run:
             return False

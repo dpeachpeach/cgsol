@@ -37,12 +37,18 @@ from orchestrator.state import Store
 
 log = logging.getLogger("cgsol.poller")
 
-#: The states whose next move is CI's to make. Anywhere else the last known
-#: checks are already in the store and re-reading them cannot change an answer,
-#: and check-runs is the most expensive read in the loop: one request per PR per
-#: sweep, uncacheable for as long as CI is churning.
-CI_WATCH_STATES: frozenset[State] = frozenset(
-    {State.DEVIN_PR_OPEN, State.CI_FAILING, State.DEVIN_FIXING}
+#: The states that have stopped waiting on CI: the work is retired, or it is a
+#: human's move. Everywhere else — including a card that has not yet noticed it
+#: has a PR — the checks still decide the next transition. Check-runs is the
+#: most expensive read in the loop (one request per PR per sweep, uncacheable
+#: while CI churns), but skipping it for a card whose PR just opened strands the
+#: card: nothing else promotes it out of `devin-eligible`.
+CI_SETTLED_STATES: frozenset[State] = TERMINAL_STATES | {State.HUMAN_REVIEW}
+
+#: Cards that have not yet accounted for a PR. Reconcile adopts one it finds on
+#: GitHub rather than waiting for a session that may never report.
+PRE_PR_STATES: frozenset[State | None] = frozenset(
+    {None, State.NEEDS_TRIAGE, State.DEVIN_ELIGIBLE, State.DEVIN_WORKING}
 )
 
 
@@ -74,28 +80,35 @@ class Poller:
         try:
             await self.reconcile()
             self.store.first_sync.set()
-        except RateLimited as limit:
-            # Refusing to boot until GitHub answers turns an hour of thin
-            # budget into an hour of downtime. Come up unhealthy and converge.
-            log.warning("first sync deferred: %s", limit)
-            self._tasks = [asyncio.create_task(self._recover(limit), name="cgsol-recover")]
+        except asyncio.CancelledError:
+            raise
+        except Exception as failure:
+            # Refusing to boot until GitHub answers turns a thin budget or a
+            # dropped connection into downtime. Come up unhealthy and converge:
+            # the projection is derived, so a late first sync costs latency.
+            log.warning("first sync deferred: %s", failure)
+            self._tasks = [asyncio.create_task(self._recover(failure), name="cgsol-recover")]
             return
         self._tasks = [
             asyncio.create_task(self._session_loop(), name="cgsol-sessions"),
             asyncio.create_task(self._reconcile_loop(), name="cgsol-reconcile"),
         ]
 
-    async def _recover(self, limit: RateLimited) -> None:
+    async def _recover(self, failure: Exception) -> None:
         """Retry the first sync until it lands, then run the loops as normal."""
         while not self.store.first_sync.is_set():
-            await self._wait_out(limit)
+            if isinstance(failure, RateLimited):
+                await self._wait_out(failure)
+            else:
+                await asyncio.sleep(self.settings.poll_waiting_seconds)
             try:
                 await self.reconcile()
                 self.store.first_sync.set()
-            except RateLimited as again:
-                limit = again
-            except Exception:
-                log.exception("deferred first sync failed")
+            except asyncio.CancelledError:
+                raise
+            except Exception as again:
+                failure = again
+                log.warning("deferred first sync failed: %s", again)
         self._tasks += [
             asyncio.create_task(self._session_loop(), name="cgsol-sessions"),
             asyncio.create_task(self._reconcile_loop(), name="cgsol-reconcile"),
@@ -333,6 +346,8 @@ class Poller:
         card.pr_number = pr["number"]
         card.meta.pr_url = pr["html_url"]
         card.pr_merged = bool(pr.get("merged_at"))
+        if not card.pr_merged and card.state in PRE_PR_STATES:
+            await self.dispatcher.adopt_pr(card, pr)
         if not _checks_can_still_move(card, pr):
             # A merged PR still has to land the card on `done`; it just does not
             # need its checks re-read to say so.
@@ -348,7 +363,7 @@ def _checks_can_still_move(card: IssueCard, pr: dict[str, Any]) -> bool:
     """Whether reading this PR's check runs can still change anything."""
     if pr.get("merged_at") or pr.get("state") not in (None, "open"):
         return False
-    return card.state in CI_WATCH_STATES
+    return card.state not in CI_SETTLED_STATES
 
 
 def _iso8601(when: float | None) -> str | None:
