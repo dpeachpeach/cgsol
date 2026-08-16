@@ -381,6 +381,8 @@ class Dispatcher:
         )
 
     async def escalate(self, card: IssueCard, reason: str, target: State) -> None:
+        if card.meta.escalation == reason and card.state is target:
+            return  # reconcile keeps seeing the red PR; escalate once, not every pass
         card.meta.escalation = reason
         self.metrics.record_escalation(reason)
         try:

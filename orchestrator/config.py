@@ -54,15 +54,19 @@ class Settings(BaseSettings):
 
     # --- Modes ----------------------------------------------------------------
     replay: bool = False
-    #: Strictly replay recorded cassettes instead of the simulated fork. Only
-    #: useful after a `RECORD=true` dress rehearsal; see orchestrator/simulator.py
-    #: for why simulation is the default replay.
+    #: Strictly replay recorded cassettes instead of the simulated fork. The
+    #: cassettes are recorded from a scripted run (`make cassette`) and replayed
+    #: by the same script in the test suite, which is the only place the request
+    #: sequence is reproducible; see orchestrator/replay.py.
     replay_cassette: bool = False
     #: In replay there is no webhook to start anything, so triage the backlog
     #: on boot. A dashboard that needs a click before it moves reads as broken.
     replay_autostart: bool = True
     record: bool = False
     fixtures_dir: str = "fixtures"
+    #: The fork snapshot replay is seeded from. The cassette run uses a smaller
+    #: one so the recorded artifact stays readable in a diff.
+    replay_snapshot: str = "fixtures/source-issues.json"
     tag_namespace: str = "cgsol"
     dry_run: bool = False
 
@@ -81,6 +85,23 @@ class Settings(BaseSettings):
             self.github_token = self.github_token or "replay"
             self.devin_api_key = self.devin_api_key or "replay"
             self.devin_org_id = self.devin_org_id or "org-replay"
+            # A secret, not the absence of one: an unsigned receiver would make
+            # `make simulate` prove nothing about the HMAC path.
+            self.github_webhook_secret = self.github_webhook_secret or "replay-secret"
+        return self
+
+    @model_validator(mode="after")
+    def _replay_compresses_the_clock(self) -> Settings:
+        """Real cadences are minutes; a replayed run has to be watchable.
+
+        Only the values left at their defaults are compressed, so an explicit
+        env var still wins and the live numbers stay the documented ones.
+        """
+        if not self.replay:
+            return self
+        for name, compressed in _REPLAY_CLOCK.items():
+            if name not in self.model_fields_set:
+                setattr(self, name, compressed)
         return self
 
     @property
@@ -94,6 +115,17 @@ class Settings(BaseSettings):
     @property
     def live(self) -> bool:
         return not self.replay
+
+
+#: Replay runs the same loops at a compressed cadence: the whole pipeline —
+#: triage, workers, three CI rounds, merges — has to be visible in a couple of
+#: minutes rather than the hours a live run takes.
+_REPLAY_CLOCK: dict[str, float] = {
+    "batch_window_seconds": 3,
+    "poll_active_seconds": 2,
+    "poll_waiting_seconds": 5,
+    "reconcile_seconds": 10,
+}
 
 
 @lru_cache

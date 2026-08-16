@@ -18,6 +18,10 @@ live: ## Everything live: real fork, real sessions, real spend.
 record: ## Live, but wrap outbound HTTP and dump cassettes to fixtures/.
 	REPLAY=false RECORD=true $(COMPOSE) up --build
 
+.PHONY: cassette
+cassette: ## Re-cut fixtures/*.jsonl from the simulated fork. No credentials, no ACUs.
+	$(UV) run python -m orchestrator.replay
+
 .PHONY: down
 down: ## Stop everything.
 	$(COMPOSE) down -v

@@ -23,6 +23,12 @@ reproducible and, more usefully, scoreable.
 `RECORD=true` still records real traffic to cassettes, and `REPLAY_CASSETTE=true`
 plays those back strictly. Replay-by-simulation is the default because it is the
 one an evaluator with no credentials can run.
+
+Two things here are fiction rather than simulation, and are marked as such in the
+README: CI verdicts are assigned by rule instead of run, and a reviewer merges
+green PRs after a beat. Without the second one the board stops at
+`human-review` and the funnel, the merge rate and ACU-per-merged-PR are all
+empty, which is a demo of the wrong half of the system.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ import base64
 import json
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,13 +45,15 @@ import httpx
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SNAPSHOT_PATH = REPO_ROOT / "fixtures" / "source-issues.json"
 CORPUS_PATH = REPO_ROOT / "seed" / "issues.yaml"
 
 #: How long a simulated session runs before it finishes. Real sessions take
 #: minutes; the replay compresses the timeline so the whole pipeline is visible.
-SESSION_SECONDS = 6.0
-CI_SECONDS = 5.0
+SESSION_SECONDS = 5.0
+CI_SECONDS = 4.0
+#: How long a green PR sits in `human-review` before the simulated reviewer
+#: merges it.
+REVIEW_SECONDS = 8.0
 
 _TIER_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("trivial", ("typo", "locale", "format", "duplicate iso", "annotation", "openapi")),
@@ -52,6 +61,18 @@ _TIER_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 _TIER_ACUS = {"trivial": 0.9, "medium": 2.1, "hard": 3.8}
+
+
+def _first_ci_is_red(number: int) -> bool:
+    """Roughly a third of first attempts come back red — that is why there is a
+    CI loop at all, so the replay has to show it."""
+    return number % 3 == 0
+
+
+def _ci_stays_red(number: int) -> bool:
+    """One of them stays red however often Devin pushes at it, so the round cap
+    and `escalation:ci-unfixable` are visible rather than merely implemented."""
+    return number % 6 == 0
 
 
 def _slug(title: str) -> str:
@@ -74,7 +95,7 @@ class SimulatedWorld:
     session finishing is the same event as a PR appearing on the fork.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, snapshot: Path | None = None) -> None:
         self.issues: dict[int, dict[str, Any]] = {}
         self.comments: dict[int, list[dict[str, Any]]] = {}
         self.prs: list[dict[str, Any]] = []
@@ -83,16 +104,33 @@ class SimulatedWorld:
         self.labels: dict[str, dict[str, str]] = {}
         self.sessions: dict[str, dict[str, Any]] = {}
         self.corpus: dict[str, dict[str, Any]] = {}
+        self.review_started: dict[int, float] = {}
         self._next_comment_id = 1_000
         self._next_pr = 100
         self._next_session = 1
-        self._load()
+        self._clock: float | None = None
+        self._load(snapshot or _snapshot_path())
+
+    # --- clock ----------------------------------------------------------------
+
+    def now(self) -> float:
+        """Wall clock, unless someone is stepping it.
+
+        The recorded cassette and the tests that replay it need the same
+        sequence of exchanges every time, which wall-clock timing cannot give.
+        """
+        return time.time() if self._clock is None else self._clock
+
+    def tick(self, seconds: float) -> None:
+        if self._clock is None:
+            self._clock = time.time()
+        self._clock += seconds
 
     # --- seeding --------------------------------------------------------------
 
-    def _load(self) -> None:
-        if SNAPSHOT_PATH.exists():
-            for raw in json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8")):
+    def _load(self, snapshot: Path) -> None:
+        if snapshot.exists():
+            for raw in json.loads(snapshot.read_text(encoding="utf-8")):
                 self.issues[raw["number"]] = {
                     "number": raw["number"],
                     "title": raw["title"],
@@ -168,12 +206,13 @@ class SimulatedWorld:
         tags = list(payload.get("tags") or [])
         session = {
             "session_id": session_id,
-            "status": "running",
-            "status_enum": "working",
+            "status": "working",
+            "status_detail": "working",
             "tags": tags,
             "title": payload.get("title"),
             "url": f"https://app.devin.ai/sessions/{session_id}",
-            "created_at": time.time(),
+            "created_at": self.now(),
+            "updated_at": _iso(self.now()),
             "acus_consumed": 0.0,
             "structured_output": None,
             "origin": "api",
@@ -193,8 +232,8 @@ class SimulatedWorld:
         return [int(tag.split(":", 1)[1]) for tag in session["tags"] if tag.startswith("issue:")]
 
     def advance(self) -> None:
-        """Move any session whose simulated runtime has elapsed to finished."""
-        now = time.time()
+        """Move the world forward: sessions finish, reviewers merge."""
+        now = self.now()
         for session in self.sessions.values():
             if session["status"] == "finished":
                 continue
@@ -203,12 +242,39 @@ class SimulatedWorld:
             duration = CI_SECONDS if role == "ci-fix" else SESSION_SECONDS
             if age < duration:
                 session["acus_consumed"] = round(min(age / duration, 1.0) * 1.5, 2)
+                # Hard work stops to ask something halfway through. The poller
+                # keys its cadence off this, so replay should produce it.
+                waiting = "tier:hard" in session["tags"] and age > duration / 2
+                session["status_detail"] = "waiting_for_user" if waiting else "working"
+                session["updated_at"] = _iso(now)
                 continue
             self._finish(session, role)
+        self._review(now)
+
+    def _review(self, now: float) -> None:
+        """The simulated reviewer: merge a green PR that has sat long enough."""
+        for pr in self.prs:
+            number = pr["issue_number"]
+            issue = self.issues.get(number)
+            if pr["merged_at"] or issue is None:
+                continue
+            green = all(
+                check["conclusion"] == "success" for check in self.checks.get(pr["head"]["sha"], [])
+            )
+            if not green or "human-review" not in issue["labels"]:
+                continue
+            since = self.review_started.setdefault(number, now)
+            if now - since < REVIEW_SECONDS:
+                continue
+            pr["merged_at"] = _iso(now)
+            pr["state"] = "closed"
+            issue["state"] = "closed"
+            issue["updated_at"] = _iso(now)
 
     def _finish(self, session: dict[str, Any], role: str) -> None:
         session["status"] = "finished"
-        session["status_enum"] = "finished"
+        session["status_detail"] = "finished"
+        session["updated_at"] = _iso(self.now())
         numbers = self._issue_numbers(session)
         if role == "scout":
             session["acus_consumed"] = round(0.14 * max(1, len(numbers)), 2)
@@ -236,19 +302,19 @@ class SimulatedWorld:
         elif role == "ci-fix":
             number = numbers[0]
             session["acus_consumed"] = 0.8
-            fixed = self._resolve_ci(number)
+            pushed = self._push_ci_fix(number)
             session["structured_output"] = (
                 {
                     "outcome": "pushed-fix",
                     "issue_number": number,
                     "summary": "Corrected the lint failure the check reported.",
                 }
-                if fixed
+                if pushed
                 else {
                     "outcome": "escalated",
                     "issue_number": number,
                     "escalation_reason": "ci-unfixable",
-                    "summary": "The failure is environmental, not in the diff.",
+                    "summary": "No open PR to push to; the branch is gone.",
                 }
             )
 
@@ -260,6 +326,7 @@ class SimulatedWorld:
         sha = f"sha{self._next_pr:06d}"
         pr = {
             "number": self._next_pr,
+            "issue_number": number,
             "title": issue["title"],
             "body": f"Closes #{number}\n\nAutomated fix.",
             "html_url": f"https://github.com/dpeachpeach/superset-cg/pull/{self._next_pr}",
@@ -268,9 +335,7 @@ class SimulatedWorld:
             "head": {"ref": f"devin/issue-{number}-{_slug(issue['title'])}", "sha": sha},
         }
         self.prs.append(pr)
-        # Roughly a third of first attempts come back red — that is the point of
-        # having a CI loop at all, so the replay has to show it.
-        red = number % 3 == 0
+        red = _first_ci_is_red(number)
         self.checks[sha] = [
             {
                 "name": "pre-commit",
@@ -282,14 +347,13 @@ class SimulatedWorld:
         ]
         return pr
 
-    def _resolve_ci(self, number: int) -> bool:
-        pr = next((p for p in reversed(self.prs) if f"issue-{number}-" in p["head"]["ref"]), None)
+    def _push_ci_fix(self, number: int) -> bool:
+        """Push a fix. Whether CI agrees it was one is CI's call, not Devin's."""
+        pr = next((p for p in reversed(self.prs) if p["issue_number"] == number), None)
         if pr is None:
             return False
-        # One issue stays red on purpose, so the round limit and the escalation
-        # path are visible in the replay rather than merely implemented.
-        if number % 9 == 0:
-            return False
+        if _ci_stays_red(number):
+            return True
         self.checks[pr["head"]["sha"]] = [
             {"name": check["name"], "status": "completed", "conclusion": "success"}
             for check in self.checks.get(pr["head"]["sha"], [])
@@ -310,6 +374,13 @@ class SimulatedWorld:
                 if comment["id"] == comment_id:
                     comment["body"] = body
                     return
+
+
+def _snapshot_path() -> Path:
+    from orchestrator.config import get_settings
+
+    path = Path(get_settings().replay_snapshot)
+    return path if path.is_absolute() else REPO_ROOT / path
 
 
 _world: SimulatedWorld | None = None
@@ -388,7 +459,9 @@ class SimulatedGitHubTransport(httpx.AsyncBaseTransport):
             return _json([{"name": name} for name in issue["labels"]], request=request)
 
         if re.fullmatch(r"/repos/[^/]+/[^/]+/pulls", path):
-            return _json(state.prs, request=request)
+            wanted = request.url.params.get("state", "open")
+            prs = [pr for pr in state.prs if wanted == "all" or pr["state"] == wanted]
+            return _json([_pr_json(pr) for pr in prs], request=request)
 
         if match := re.fullmatch(r"/repos/[^/]+/[^/]+/commits/([^/]+)/check-runs", path):
             runs = state.checks.get(match.group(1), [])
@@ -430,29 +503,41 @@ class SimulatedDevinTransport(httpx.AsyncBaseTransport):
             except ValueError:
                 body = {}
 
-        if method == "POST" and re.fullmatch(r"/v3/organizations/[^/]+/sessions", path):
-            return _json(_session_json(state.create_session(body)), 201, request)
+        if re.fullmatch(r"/v3/organizations/[^/]+/sessions", path):
+            if method == "POST":
+                return _json(_session_v3(state.create_session(body)), 201, request)
+            wanted = set(request.url.params.get_list("tags"))
+            items = [
+                _session_v3(session)
+                for session in state.sessions.values()
+                if wanted.issubset(set(session["tags"]))
+            ]
+            return _json({"items": items}, request=request)
 
         if path == "/v1/sessions":
             wanted = set(request.url.params.get_list("tags"))
             sessions = [
-                _session_json(session)
+                _session_v1(session)
                 for session in state.sessions.values()
                 if wanted.issubset(set(session["tags"]))
             ]
             return _json({"sessions": sessions}, request=request)
 
-        if match := re.fullmatch(r"/v3/organizations/[^/]+/sessions/(.+)", path):
+        if match := re.fullmatch(r"/v3/organizations/[^/]+/sessions/([^/]+)/messages", path):
+            del match
+            return _json({"ok": True}, 201, request)
+
+        if match := re.fullmatch(r"/v3/organizations/[^/]+/sessions/([^/]+)", path):
             session = state.sessions.get(match.group(1))
             if session is None:
                 return _json({"message": "Not Found"}, 404, request)
-            return _json(_session_json(session), request=request)
+            return _json(_session_v3(session), request=request)
 
         if match := re.fullmatch(r"/v1/session/([^/]+)", path):
             session = state.sessions.get(match.group(1))
             if session is None:
                 return _json({"message": "Not Found"}, 404, request)
-            return _json(_session_json(session), request=request)
+            return _json(_session_v1(session), request=request)
 
         if re.fullmatch(r"/v1/session/[^/]+/message", path):
             return _json({"ok": True}, request=request)
@@ -472,11 +557,16 @@ def _issue_json(issue: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _session_json(session: dict[str, Any]) -> dict[str, Any]:
+def _pr_json(pr: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in pr.items() if key != "issue_number"}
+
+
+def _session_v3(session: dict[str, Any]) -> dict[str, Any]:
+    """v3 reports ACU burn and splits the status into coarse + detail."""
     return {
         "session_id": session["session_id"],
         "status": session["status"],
-        "status_enum": session["status_enum"],
+        "status_detail": session["status_detail"],
         "tags": session["tags"],
         "title": session["title"],
         "url": session["url"],
@@ -485,8 +575,30 @@ def _session_json(session: dict[str, Any]) -> dict[str, Any]:
         "origin": session["origin"],
         "playbook_id": session["playbook_id"],
         "pull_requests": session["pull_requests"],
-        "updated_at": "",
+        "updated_at": session["updated_at"],
     }
+
+
+def _session_v1(session: dict[str, Any]) -> dict[str, Any]:
+    """v1 has one `status_enum` and no ACU number — the reason v3 is the target."""
+    prs = session["pull_requests"]
+    return {
+        "session_id": session["session_id"],
+        "status": "running" if session["status"] != "finished" else "finished",
+        "status_enum": session["status_detail"],
+        "tags": session["tags"],
+        "title": session["title"],
+        "url": session["url"],
+        "structured_output": session["structured_output"],
+        "origin": session["origin"],
+        "playbook_id": session["playbook_id"],
+        "pull_request": {"url": prs[0]["pr_url"]} if prs else None,
+        "updated_at": session["updated_at"],
+    }
+
+
+def _iso(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _decode_content(encoded: str) -> str:

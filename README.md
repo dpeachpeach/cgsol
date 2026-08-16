@@ -64,7 +64,7 @@ devin/automations/    the three places one event maps to exactly one session
 orchestrator/         FastAPI: webhooks, state machine, dispatch, poller, reconciler, metrics
 frontend/             Vite + React + Blueprint; reads the orchestrator over SSE, nothing else
 seed/                 the corpus and the labels that produced the fork's backlog
-fixtures/             recorded traffic + the issue snapshot replay runs against
+fixtures/             cassettes, the issue snapshots replay runs against, the phase table
 ```
 
 ## Orchestration vs. Automations
@@ -92,10 +92,39 @@ sessions it never dispatched (`origin: "automation"`) and adopts them.
 make up          # http://localhost:5173
 ```
 
+No `.env`, no GitHub token, no Devin key, no tunnel, no network. The board fills
+over about ninety seconds: 22 issues ingested, one scout session triaging the
+batch, tiered workers, PRs, red CI, autofix rounds, merges, ACU accumulating,
+and the escalations that did not make it.
+
 Everything that distinguishes replay from live lives at the socket, in
 `orchestrator/transport.py`. Above that line the clients, the reconciler and the
 state machine cannot tell the difference, which is the only thing that makes a
 replay worth having as a test.
+
+Under the seam are two things, for two different jobs:
+
+- **A simulated fork and Devin org** (`orchestrator/simulator.py`), seeded from a
+  real snapshot of the backlog (`fixtures/source-issues.json`). Reads reflect
+  writes, so the reconciler still re-derives the board from "GitHub" the way it
+  does live. This is what `make up` runs.
+- **Cassettes** (`fixtures/github.jsonl`, `fixtures/devin.jsonl`): JSONL, one
+  exchange per line, keyed by method + path + query + body-hash with an
+  occurrence counter, so a poll loop that hits one URL five times replays five
+  answers in order. `REPLAY_CASSETTE=true` serves from them and nothing else —
+  a miss raises rather than improvising.
+
+The cassettes are cut from the simulated fork by `make cassette`, which runs the
+scripted timeline in `orchestrator/replay.py`; `tests/test_replay.py` runs that
+same script against the cassettes and compares both to the phase table in
+`fixtures/timeline.json`. So a state-machine change that reroutes an issue fails
+`pytest`, not just the demo. Re-cutting the cassettes is a reviewable diff of
+that table.
+
+What replay does **not** cover: real CI (verdicts are assigned by rule, not run),
+real review (a simulated reviewer merges green PRs after a beat), Devin's actual
+judgement (verdicts come from `seed/issues.yaml`, the human answer key), auth,
+rate limits, and the webhook tunnel. Those need the live path below.
 
 ### Live
 
@@ -119,7 +148,8 @@ is already seeded; the script exists so the setup is reproducible, and
 ### Other targets
 
 ```bash
-make simulate    # signed webhook deliveries, sent twice each, at a running receiver
+make simulate    # replay fixtures/webhook-deliveries.json at a running receiver
+make cassette    # re-cut fixtures/*.jsonl + timeline.json from the simulated fork
 make automations # render devin/automations/*.yaml for review before applying
 make check       # ruff, mypy, pytest, tsc, eslint
 ```

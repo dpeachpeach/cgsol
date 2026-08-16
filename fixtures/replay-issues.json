@@ -1,0 +1,56 @@
+[
+ {
+  "number": 1,
+  "title": "[6.0.0rc3] Same color being picked twice in a chart when dashboard doesn't have a map_label_colors",
+  "html_url": "https://github.com/dpeachpeach/superset-cg/issues/1",
+  "state": "open",
+  "labels": [],
+  "updated_at": "2026-08-15T23:08:56Z",
+  "body": "### Bug description Bug is that in a dashboard with more than 1 chart, the same color can be picked twice for a given chart. To reproduce, the dashboard needs to have an empty map_label_colors or an i …"
+ },
+ {
+  "number": 3,
+  "title": "Tooltip ignores metric format in line charts (always shows dollar format) – Regression in 4.X",
+  "html_url": "https://github.com/dpeachpeach/superset-cg/issues/3",
+  "state": "open",
+  "labels": [],
+  "updated_at": "2026-08-15T23:08:59Z",
+  "body": "### Bug description In most recent Superset, tooltips in line charts display metric values using a dollar format ($,.2f), even when: - The metric is clearly set to a percentage format (e.g., .2%) in t …"
+ },
+ {
+  "number": 6,
+  "title": "[6.0.0rc2] Fetch error NOT FOUND /api/v1/_openapi in Swagger after setting SUPERSET_APP_ROOT",
+  "html_url": "https://github.com/dpeachpeach/superset-cg/issues/6",
+  "state": "open",
+  "labels": [],
+  "updated_at": "2026-08-15T23:09:02Z",
+  "body": "## Description When using Apache Superset 6.0.0rc2, the Swagger UI shows a fetch error: ``` Fetch error NOT FOUND /api/v1/_openapi ``` This happens after setting the `SUPERSET_APP_ROOT` variable in `s …"
+ },
+ {
+  "number": 7,
+  "title": "duplicate iso code in iran's country map",
+  "html_url": "https://github.com/dpeachpeach/superset-cg/issues/7",
+  "state": "open",
+  "labels": [],
+  "updated_at": "2026-08-15T23:09:03Z",
+  "body": "in [iran GitHub GeoJSON Content](https://raw.githubusercontent.com/apache/superset/refs/heads/master/superset-frontend/plugins/legacy-plugin-chart-country-map/src/countries/iran.geojson) two IR-07 (fo …"
+ },
+ {
+  "number": 8,
+  "title": "Annotation layers are not imported/exported.",
+  "html_url": "https://github.com/dpeachpeach/superset-cg/issues/8",
+  "state": "open",
+  "labels": [],
+  "updated_at": "2026-08-15T23:09:05Z",
+  "body": "### Bug description Hi! Since version 3.1.1 import of annotation layers of all types except AnnotationType.FORMULA stopped working. The import has a filter_chart_annotations stub which filters out all …"
+ },
+ {
+  "number": 18,
+  "title": "Row limit shouldn't carry over when chart type is switched",
+  "html_url": "https://github.com/dpeachpeach/superset-cg/issues/18",
+  "state": "open",
+  "labels": [],
+  "updated_at": "2026-08-15T23:43:07Z",
+  "body": "### Bug description In Superset 4.1.2, I make a pie chart (default row limit 100). Looks good. Then I switch to a line chart showing different dimensions over time. The values carry over - which is go …"
+ }
+]

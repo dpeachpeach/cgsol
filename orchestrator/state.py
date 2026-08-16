@@ -63,7 +63,17 @@ class Store:
         card.session = session
         if session.pr_url and not card.meta.pr_url:
             card.meta.pr_url = session.pr_url
-        card.meta.acus = max(card.meta.acus, session.acus_consumed)
+        # An issue's burn is every session that worked on it — the worker plus
+        # however many autofix rounds it took. Taking the largest would report
+        # the CI loop as free, which is exactly the cost worth watching.
+        card.meta.acus = round(
+            sum(
+                other.acus_consumed
+                for other in self._sessions.values()
+                if other.issue_number == number and other.role != "scout"
+            ),
+            2,
+        )
         card.last_synced = time.time()
 
     def set_checks(self, number: int, checks: list[CheckRun]) -> None:

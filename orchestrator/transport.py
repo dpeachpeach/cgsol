@@ -9,6 +9,9 @@ that flips to `finished` must line up with the GitHub PR that appears.
 The cassette is a JSONL file, one exchange per line, in call order. Matching is
 by (method, path, query, body-hash) with an occurrence counter, so a poll loop
 that hits the same URL five times replays five different answers in sequence.
+The request body is kept only as far as it stays readable — the hash in the key
+is what matching uses, and a full worker prompt on one line is not something
+anyone reviews.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from typing import Any
 import httpx
 
 _REDACT_HEADERS = {"authorization", "x-hub-signature-256", "cookie", "set-cookie"}
+_MAX_RECORDED_REQUEST = 400
 
 
 def _body_hash(content: bytes) -> str:
@@ -34,6 +38,12 @@ def _body_hash(content: bytes) -> str:
 
 def _key(method: str, url: httpx.URL, content: bytes) -> str:
     return f"{method.upper()} {url.host}{url.path}?{url.query.decode()} {_body_hash(content)}"
+
+
+def _elide(body: str) -> str:
+    if len(body) <= _MAX_RECORDED_REQUEST:
+        return body
+    return body[:_MAX_RECORDED_REQUEST] + f"… [{len(body)} bytes, hashed in key]"
 
 
 def _scrub(headers: httpx.Headers) -> dict[str, str]:
@@ -63,7 +73,7 @@ class RecordingTransport(httpx.AsyncBaseTransport):
                 "method": request.method,
                 "url": str(request.url),
                 "headers": _scrub(request.headers),
-                "body": request.content.decode("utf-8", "replace") or None,
+                "body": _elide(request.content.decode("utf-8", "replace")) or None,
             },
             "response": {
                 "status": response.status_code,
@@ -147,7 +157,12 @@ def build_transport(service: str) -> httpx.AsyncBaseTransport | None:
     if settings.replay and settings.replay_cassette:
         return ReplayTransport(cassette, strict=True)
     if settings.replay:
-        return SimulatedGitHubTransport() if service == "github" else SimulatedDevinTransport()
+        simulated: httpx.AsyncBaseTransport = (
+            SimulatedGitHubTransport() if service == "github" else SimulatedDevinTransport()
+        )
+        # RECORD on top of REPLAY cuts the cassettes from the simulated fork
+        # rather than from a live one: same exchanges, no credentials, no ACUs.
+        return RecordingTransport(cassette, inner=simulated) if settings.record else simulated
     if settings.record:
         return RecordingTransport(cassette)
     return None

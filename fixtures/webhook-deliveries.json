@@ -1,0 +1,240 @@
+[
+ {
+  "delivery": "cgsol-replay-0001",
+  "event": "issues",
+  "expect": "accepted",
+  "note": "labelled needs-triage; joins the debounce window",
+  "payload": {
+   "action": "labeled",
+   "label": {
+    "name": "needs-triage"
+   },
+   "issue": {
+    "number": 1,
+    "title": "[6.0.0rc3] Same color being picked twice in a chart when dashboard doesn't have a map_label_colors",
+    "body": "### Bug description Bug is that in a dashboard with more than 1 chart, the same color can be picked twice for a given ch",
+    "html_url": "https://github.com/dpeachpeach/superset-cg/issues/1",
+    "state": "open",
+    "labels": [
+     {
+      "name": "needs-triage"
+     }
+    ],
+    "updated_at": "2026-08-15T23:08:56Z"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "dpeachpeach"
+   }
+  }
+ },
+ {
+  "delivery": "cgsol-replay-0002",
+  "event": "issues",
+  "expect": "accepted",
+  "note": "labelled needs-triage; joins the debounce window",
+  "payload": {
+   "action": "labeled",
+   "label": {
+    "name": "needs-triage"
+   },
+   "issue": {
+    "number": 3,
+    "title": "Tooltip ignores metric format in line charts (always shows dollar format) – Regression in 4.X",
+    "body": "### Bug description In most recent Superset, tooltips in line charts display metric values using a dollar format ($,.2f)",
+    "html_url": "https://github.com/dpeachpeach/superset-cg/issues/3",
+    "state": "open",
+    "labels": [
+     {
+      "name": "needs-triage"
+     }
+    ],
+    "updated_at": "2026-08-15T23:08:59Z"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "dpeachpeach"
+   }
+  }
+ },
+ {
+  "delivery": "cgsol-replay-0003",
+  "event": "issues",
+  "expect": "accepted",
+  "note": "labelled needs-triage; joins the debounce window",
+  "payload": {
+   "action": "labeled",
+   "label": {
+    "name": "needs-triage"
+   },
+   "issue": {
+    "number": 6,
+    "title": "[6.0.0rc2] Fetch error NOT FOUND /api/v1/_openapi in Swagger after setting SUPERSET_APP_ROOT",
+    "body": "## Description When using Apache Superset 6.0.0rc2, the Swagger UI shows a fetch error: ``` Fetch error NOT FOUND /api/v",
+    "html_url": "https://github.com/dpeachpeach/superset-cg/issues/6",
+    "state": "open",
+    "labels": [
+     {
+      "name": "needs-triage"
+     }
+    ],
+    "updated_at": "2026-08-15T23:09:02Z"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "dpeachpeach"
+   }
+  }
+ },
+ {
+  "delivery": "cgsol-replay-0004",
+  "event": "issues",
+  "expect": "accepted",
+  "note": "labelled needs-triage; joins the debounce window",
+  "payload": {
+   "action": "labeled",
+   "label": {
+    "name": "needs-triage"
+   },
+   "issue": {
+    "number": 7,
+    "title": "duplicate iso code in iran's country map",
+    "body": "in [iran GitHub GeoJSON Content](https://raw.githubusercontent.com/apache/superset/refs/heads/master/superset-frontend/p",
+    "html_url": "https://github.com/dpeachpeach/superset-cg/issues/7",
+    "state": "open",
+    "labels": [
+     {
+      "name": "needs-triage"
+     }
+    ],
+    "updated_at": "2026-08-15T23:09:03Z"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "dpeachpeach"
+   }
+  }
+ },
+ {
+  "delivery": "cgsol-replay-0005",
+  "event": "issues",
+  "expect": "accepted",
+  "note": "Devin relabelled it; the sender filter must not re-triage it",
+  "payload": {
+   "action": "labeled",
+   "label": {
+    "name": "needs-triage"
+   },
+   "issue": {
+    "number": 8,
+    "title": "Annotation layers are not imported/exported.",
+    "body": "### Bug description Hi! Since version 3.1.1 import of annotation layers of all types except AnnotationType.FORMULA stopp",
+    "html_url": "https://github.com/dpeachpeach/superset-cg/issues/8",
+    "state": "open",
+    "labels": [
+     {
+      "name": "needs-triage"
+     }
+    ],
+    "updated_at": "2026-08-15T23:09:05Z"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "devin-ai-integration[bot]"
+   }
+  }
+ },
+ {
+  "delivery": "cgsol-replay-0006",
+  "event": "issue_comment",
+  "expect": "accepted",
+  "note": "human comment on a live issue; counts as a human turn against autonomy",
+  "payload": {
+   "action": "created",
+   "comment": {
+    "body": "Any progress here?",
+    "user": {
+     "login": "dpeachpeach"
+    }
+   },
+   "issue": {
+    "number": 3,
+    "title": "Tooltip ignores metric format in line charts (always shows dollar format) – Regression in 4.X",
+    "body": "### Bug description In most recent Superset, tooltips in line charts display metric values using a dollar format ($,.2f)",
+    "html_url": "https://github.com/dpeachpeach/superset-cg/issues/3",
+    "state": "open",
+    "labels": [
+     {
+      "name": "needs-triage"
+     }
+    ],
+    "updated_at": "2026-08-15T23:08:59Z"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "dpeachpeach"
+   }
+  }
+ },
+ {
+  "delivery": "cgsol-replay-0007",
+  "event": "check_run",
+  "expect": "accepted",
+  "note": "CI moved; the receiver pokes the reconciler rather than trusting this payload",
+  "payload": {
+   "action": "completed",
+   "check_run": {
+    "name": "pre-commit",
+    "status": "completed",
+    "conclusion": "failure",
+    "head_sha": "sim-1-0"
+   },
+   "repository": {
+    "full_name": "dpeachpeach/superset-cg",
+    "name": "superset-cg",
+    "owner": {
+     "login": "dpeachpeach"
+    }
+   },
+   "sender": {
+    "login": "github-actions[bot]"
+   }
+  }
+ }
+]

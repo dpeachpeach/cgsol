@@ -1,0 +1,197 @@
+[
+ {
+  "name": "ingested",
+  "states": {
+   "1": "-",
+   "3": "-",
+   "6": "-",
+   "7": "-",
+   "8": "-",
+   "18": "-"
+  },
+  "sessions": 0,
+  "acus": 0.0
+ },
+ {
+  "name": "scout-dispatched",
+  "states": {
+   "1": "-",
+   "3": "-",
+   "6": "-",
+   "7": "-",
+   "8": "-",
+   "18": "-"
+  },
+  "sessions": 1,
+  "acus": 0.0
+ },
+ {
+  "name": "triaged",
+  "states": {
+   "1": "devin-eligible",
+   "3": "devin-eligible",
+   "6": "devin-eligible",
+   "7": "devin-eligible",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 1,
+  "acus": 0.0
+ },
+ {
+  "name": "workers-dispatched",
+  "states": {
+   "1": "devin-working",
+   "3": "devin-working",
+   "6": "devin-working",
+   "7": "devin-working",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 5,
+  "acus": 0.0
+ },
+ {
+  "name": "prs-opened",
+  "states": {
+   "1": "devin-pr-open",
+   "3": "devin-pr-open",
+   "6": "devin-pr-open",
+   "7": "devin-pr-open",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 5,
+  "acus": 8.4
+ },
+ {
+  "name": "ci-verdict-1",
+  "states": {
+   "1": "human-review",
+   "3": "devin-fixing",
+   "6": "devin-fixing",
+   "7": "human-review",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 7,
+  "acus": 8.4
+ },
+ {
+  "name": "ci-fixed-1",
+  "states": {
+   "1": "human-review",
+   "3": "devin-pr-open",
+   "6": "devin-pr-open",
+   "7": "human-review",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 7,
+  "acus": 10.0
+ },
+ {
+  "name": "ci-verdict-2",
+  "states": {
+   "1": "human-review",
+   "3": "human-review",
+   "6": "devin-fixing",
+   "7": "human-review",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 8,
+  "acus": 10.0
+ },
+ {
+  "name": "ci-fixed-2",
+  "states": {
+   "1": "human-review",
+   "3": "human-review",
+   "6": "devin-pr-open",
+   "7": "human-review",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 8,
+  "acus": 10.8
+ },
+ {
+  "name": "ci-verdict-3",
+  "states": {
+   "1": "done",
+   "3": "human-review",
+   "6": "devin-fixing",
+   "7": "done",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 9,
+  "acus": 10.8
+ },
+ {
+  "name": "ci-fixed-3",
+  "states": {
+   "1": "done",
+   "3": "human-review",
+   "6": "devin-pr-open",
+   "7": "done",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 9,
+  "acus": 11.6
+ },
+ {
+  "name": "ci-verdict-4",
+  "states": {
+   "1": "done",
+   "3": "done",
+   "6": "human-review",
+   "7": "done",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 9,
+  "acus": 11.6
+ },
+ {
+  "name": "ci-fixed-4",
+  "states": {
+   "1": "done",
+   "3": "done",
+   "6": "human-review",
+   "7": "done",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 9,
+  "acus": 11.6
+ },
+ {
+  "name": "merged",
+  "states": {
+   "1": "done",
+   "3": "done",
+   "6": "human-review",
+   "7": "done",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 9,
+  "acus": 11.6
+ },
+ {
+  "name": "settled",
+  "states": {
+   "1": "done",
+   "3": "done",
+   "6": "human-review",
+   "7": "done",
+   "8": "human-review",
+   "18": "devin-declined"
+  },
+  "sessions": 9,
+  "acus": 11.6
+ }
+]

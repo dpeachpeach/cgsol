@@ -1,8 +1,14 @@
-"""`make simulate` — fire webhook deliveries at a running receiver.
+"""`make simulate` — replay recorded webhook deliveries at a running receiver.
 
-Signed with the real secret and shaped like GitHub's payloads, so this exercises
-the receiver's actual path: HMAC check, delivery de-duplication, sender filter,
-debounce window. Sending unsigned payloads would test nothing worth testing.
+The deliveries in `fixtures/webhook-deliveries.json` are shaped like GitHub's and
+signed with the configured secret, so this drives the receiver's real path rather
+than a test double of it: HMAC verification, delivery de-duplication, the bot
+sender filter, and the debounce window that turns a burst of labels into one
+scout session.
+
+It asserts rather than demonstrates, because a demo that cannot fail is not
+evidence: every delivery is sent twice and the second must come back
+`duplicate`, and a body tampered with after signing must come back 401.
 """
 
 from __future__ import annotations
@@ -12,88 +18,92 @@ import asyncio
 import hashlib
 import hmac
 import json
-import uuid
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from orchestrator.config import get_settings
-from orchestrator.labels import State
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SNAPSHOT_PATH = REPO_ROOT / "fixtures" / "source-issues.json"
+DELIVERIES_PATH = REPO_ROOT / "fixtures" / "webhook-deliveries.json"
 
 
 def sign(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
-def issue_event(issue: dict[str, Any], repo: str, sender: str) -> dict[str, Any]:
-    owner, name = repo.split("/", 1)
-    return {
-        "action": "labeled",
-        "label": {"name": State.NEEDS_TRIAGE.value},
-        "issue": {
-            "number": issue["number"],
-            "title": issue["title"],
-            "body": issue.get("body", ""),
-            "html_url": issue.get("html_url", ""),
-            "state": issue.get("state", "open"),
-            "labels": [{"name": State.NEEDS_TRIAGE.value}],
-            "updated_at": issue.get("updated_at", ""),
+def load_deliveries(path: Path | None = None) -> list[dict[str, Any]]:
+    return list(json.loads((path or DELIVERIES_PATH).read_text(encoding="utf-8")))
+
+
+async def _post(
+    client: httpx.AsyncClient,
+    target: str,
+    secret: str,
+    delivery: dict[str, Any],
+    *,
+    tamper: bool = False,
+) -> str:
+    body = json.dumps(delivery["payload"]).encode()
+    signature = sign(secret, body if not tamper else body + b" ")
+    response = await client.post(
+        target,
+        content=body,
+        headers={
+            "content-type": "application/json",
+            "x-github-event": delivery["event"],
+            "x-github-delivery": delivery["delivery"],
+            "x-hub-signature-256": signature,
         },
-        "repository": {"full_name": repo, "name": name, "owner": {"login": owner}},
-        "sender": {"login": sender},
-    }
+    )
+    if response.status_code == 401:
+        return "rejected"
+    response.raise_for_status()
+    return str(response.json().get("status"))
 
 
-async def fire(target: str, secret: str, repo: str, sender: str, limit: int, replay: int) -> int:
-    issues = json.loads(SNAPSHOT_PATH.read_text(encoding="utf-8"))[:limit]
-    sent = 0
+async def fire(target: str, secret: str, path: Path | None = None) -> dict[str, int]:
+    deliveries = load_deliveries(path)
+    tally: dict[str, int] = {}
     async with httpx.AsyncClient(timeout=10) as client:
-        for issue in issues:
-            body = json.dumps(issue_event(issue, repo, sender)).encode()
-            delivery = str(uuid.uuid4())
-            # Send each delivery `replay` times with the same delivery id: the
-            # receiver must accept one and shrug at the rest.
-            for attempt in range(replay):
-                response = await client.post(
-                    target,
-                    content=body,
-                    headers={
-                        "content-type": "application/json",
-                        "x-github-event": "issues",
-                        "x-github-delivery": delivery,
-                        "x-hub-signature-256": sign(secret, body),
-                    },
+        for delivery in deliveries:
+            first = await _post(client, target, secret, delivery)
+            second = await _post(client, target, secret, delivery)
+            if first != delivery["expect"]:
+                raise SystemExit(
+                    f"{delivery['delivery']}: expected {delivery['expect']}, got {first}"
                 )
-                status = response.json().get("status")
-                print(f"#{issue['number']:>4} attempt {attempt + 1} → {status}")
-                sent += 1
-    return sent
+            if second != "duplicate":
+                raise SystemExit(f"{delivery['delivery']}: redelivery was not de-duplicated")
+            tally[first] = tally.get(first, 0) + 1
+            tally["duplicate"] = tally.get("duplicate", 0) + 1
+            print(
+                f"{delivery['delivery']} {delivery['event']:<14} "
+                f"{first}/{second} — {delivery['note']}"
+            )
+
+        tampered = await _post(client, target, secret, deliveries[0], tamper=True)
+        if tampered != "rejected":
+            raise SystemExit("a tampered body was accepted; the HMAC check is not doing anything")
+        tally["rejected"] = 1
+        print(f"{'tampered':<19} {'issues':<14} rejected — signature over a modified body")
+    return tally
 
 
 def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", default="http://localhost:8000/webhook/github")
-    parser.add_argument("--limit", type=int, default=20)
-    parser.add_argument("--replay", type=int, default=2, help="deliveries per event (dedup test)")
-    parser.add_argument("--sender", default="dpeachpeach")
+    parser.add_argument("--deliveries", type=Path, default=DELIVERIES_PATH)
     args = parser.parse_args(argv)
 
-    sent = asyncio.run(
-        fire(
-            args.target,
-            settings.github_webhook_secret,
-            settings.github_repo,
-            args.sender,
-            args.limit,
-            args.replay,
-        )
+    tally = asyncio.run(fire(args.target, settings.github_webhook_secret, args.deliveries))
+    print(
+        f"\n{sum(tally.values())} deliveries: {tally}\n"
+        f"The labelled issues collapse into one scout session — the receiver holds them for "
+        f"{settings.batch_window_seconds}s before dispatching."
     )
-    print(f"{sent} deliveries sent")
     return 0
 
 
