@@ -13,6 +13,10 @@ v3 create has no `idempotent` flag, so idempotency is enforced here instead —
 and on the right key. Before dispatching we look for a live session already
 tagged with this issue and role. That is idempotent on the *target state*, which
 is what we want anyway when three actors write labels concurrently.
+
+v3 create needs a service-user key holding the org-level `UseDevinSessions`
+permission; a personal key falls back to `POST /v1/sessions`, which takes the
+same playbook / knowledge / tag / ACU-ceiling arguments.
 """
 
 from __future__ import annotations
@@ -27,6 +31,10 @@ from orchestrator.models import SessionInfo
 from orchestrator.transport import build_transport
 
 log = logging.getLogger("cgsol.devin")
+
+#: v3 needs a service user with `org.devins.use`; a personal key gets 403/404
+#: there and must create through v1 instead.
+_NO_V3_ACCESS = {401, 403, 404}
 
 
 class DevinClient:
@@ -79,11 +87,23 @@ class DevinClient:
             payload["structured_output_schema"] = structured_output_schema
             payload["structured_output_required"] = structured_output_required
 
-        response = await self._client.post(
-            f"/v3/organizations/{self._settings.devin_org_id}/sessions", json=payload
-        )
+        org = self._settings.devin_org_id
+        if org:
+            response = await self._client.post(f"/v3/organizations/{org}/sessions", json=payload)
+            if response.status_code not in _NO_V3_ACCESS:
+                response.raise_for_status()
+                return _from_v3(response.json())
+            log.info("v3 create unavailable (%s), falling back to v1", response.status_code)
+
+        # v1 has no `structured_output_required`; the playbooks say when to call
+        # `provide_structured_output`, which is what actually makes it happen.
+        payload.pop("structured_output_required", None)
+        payload.pop("resumable", None)
+        payload["idempotent"] = True
+        response = await self._client.post("/v1/sessions", json=payload)
         response.raise_for_status()
-        return _from_v3(response.json())
+        created = response.json()
+        return await self.get_session(created["session_id"])
 
     async def send_message(self, session_id: str, message: str) -> None:
         await self._client.post(f"/v1/session/{session_id}/message", json={"message": message})
