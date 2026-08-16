@@ -72,11 +72,18 @@ class Debouncer:
             if self._task is None or self._task.done():
                 self._task = asyncio.create_task(self._run())
 
-    async def flush_now(self) -> None:
+    async def flush_now(self) -> set[int]:
+        """Returns what it flushed, so a caller can say what it dispatched."""
         async with self._lock:
             batch, self._pending = self._pending, set()
+            timer, self._task = self._task, None
+        # A flush leaves the timer with nothing to collapse, so it is cancelled
+        # rather than left to wake up on an empty set.
+        if timer is not None and timer is not asyncio.current_task():
+            timer.cancel()
         if batch:
             await self._flush(batch)
+        return batch
 
     async def _run(self) -> None:
         await asyncio.sleep(self._window)

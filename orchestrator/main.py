@@ -191,6 +191,16 @@ class StateChange(BaseModel):
     state: State
 
 
+@app.post("/api/issues/{number}/triage")
+async def api_triage_issue(number: int) -> dict[str, Any]:
+    """Triage one card, for the operator who wants this issue looked at now
+    rather than the whole backlog. Same scout, same verdict path."""
+    service = get_orchestrator()
+    if service.store.card(number) is None:
+        raise HTTPException(status_code=404, detail="unknown issue")
+    return await service.triage_issue(number)
+
+
 @app.post("/api/issues/{number}/state")
 async def api_set_state(number: int, change: StateChange) -> dict[str, Any]:
     """Writes go straight through to GitHub, never queued behind a poll."""

@@ -15,6 +15,11 @@ import type { IssueCard, State } from "../types";
 
 const HUMAN_STATES: State[] = ["human-review", "done", "devin-blocked", "needs-triage"];
 
+/** The board's Backlog column: nothing has judged this issue yet. */
+function inBacklog(card: IssueCard): boolean {
+  return card.state === null || card.state === "needs-triage";
+}
+
 export function IssueDrawer({
   number,
   onClose,
@@ -26,6 +31,8 @@ export function IssueDrawer({
 }) {
   const [card, setCard] = useState<IssueCard | null>(null);
   const [busy, setBusy] = useState(false);
+  const [triaging, setTriaging] = useState(false);
+  const [queued, setQueued] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,11 +40,27 @@ export function IssueDrawer({
       setCard(null);
       return;
     }
+    setQueued(false);
     api
       .issue(number)
       .then(setCard)
       .catch((err: Error) => setError(err.message));
   }, [number]);
+
+  async function triage() {
+    if (card === null) return;
+    setTriaging(true);
+    try {
+      // The scout labels the issue; the verdict arrives by webhook, so the
+      // card is not updated optimistically here — that would be a guess.
+      await api.triageIssue(card.number);
+      setQueued(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setTriaging(false);
+    }
+  }
 
   async function move(state: State) {
     if (card === null) return;
@@ -94,6 +117,24 @@ export function IssueDrawer({
               <p className="mono">
                 {card.progress_phase}
                 {card.progress_message ? ` — ${card.progress_message}` : ""}
+              </p>
+            </div>
+          )}
+
+          {inBacklog(card) && (
+            <div className="drawer__section">
+              <Button
+                icon="predictive-analysis"
+                intent="primary"
+                text={queued ? "Scout dispatched" : "Triage issue"}
+                loading={triaging}
+                disabled={queued}
+                onClick={() => void triage()}
+              />
+              <p className="bp5-text-muted">
+                {queued
+                  ? "A scout is reading it; the verdict lands as a label."
+                  : "Sends this one issue to a scout, without triaging the backlog."}
               </p>
             </div>
           )}
