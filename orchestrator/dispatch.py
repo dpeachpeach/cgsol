@@ -63,7 +63,7 @@ class Dispatcher:
         self, role: str, issue_number: int | None = None, tier: str | None = None
     ) -> list[str]:
         tags = [self.settings.tag_namespace, PIPELINE_TAG, f"role:{role}"]
-        tags.append(f"repo:{self.settings.repo_owner}-{self.settings.repo_name}")
+        tags.append(self.settings.repo_tag)
         if issue_number is not None:
             tags.append(f"issue:{issue_number}")
         if tier:

@@ -30,7 +30,7 @@ CONFIG_PATH = ".cgsol/config.yaml"
 class Orchestrator:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
-        self.store = Store()
+        self.store = Store(repo=self.settings.repo_slug)
         self.metrics = MetricsRegistry()
         self.resources = load_resources()
         self.github = GitHubClient(self.settings)

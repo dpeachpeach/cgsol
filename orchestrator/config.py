@@ -170,6 +170,15 @@ class Settings(BaseSettings):
         return self.github_repo.split("/", 1)[1]
 
     @property
+    def repo_slug(self) -> str:
+        """The repository as it appears in a session's `repo:` tag."""
+        return f"{self.repo_owner}-{self.repo_name}"
+
+    @property
+    def repo_tag(self) -> str:
+        return f"repo:{self.repo_slug}"
+
+    @property
     def live(self) -> bool:
         return not self.replay
 
