@@ -3,6 +3,7 @@ pipeline:
   - {name: needs-triage,   color: D4D4D4, description: "Imported, not yet assessed. Entry state."}
   - {name: devin-eligible, color: 1D76DB, description: "Triaged as agent-solvable. Ready to hand to Devin."}
   - {name: devin-declined, color: 6E7781, description: "Triaged as NOT agent-solvable. Terminal."}
+  - {name: can-close-issue, color: C2E0C6, description: "Verified resolved — safe to close. Precursor to done."}
   - {name: devin-working,  color: 0052CC, description: "Devin has picked it up and is actively working."}
   - {name: devin-blocked,  color: B60205, description: "Devin stopped. Needs a human."}
   - {name: devin-pr-open,  color: 5319E7, description: "Devin opened a PR against THIS repo. Awaiting CI."}

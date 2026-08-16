@@ -7,6 +7,7 @@ export type State =
   | "devin-fixing"
   | "human-review"
   | "devin-declined"
+  | "can-close-issue"
   | "devin-blocked"
   | "done";
 
@@ -78,6 +79,7 @@ export interface Metrics {
     total_acu: number;
     build_acu: number;
     merged: number;
+    retired: number;
   };
   funnel: Record<string, number>;
   by_tier: Record<
@@ -109,9 +111,12 @@ export interface TriageEstimate {
   issues: number[];
 }
 
+export type TriageMode = "auto" | "chunked" | "manual";
+
 export interface ConfigPayload {
   path: string;
   repo: string;
   remote: Record<string, unknown> | null;
-  effective: Record<string, number>;
+  next_chunk_at: number | null;
+  effective: Record<string, number | string>;
 }

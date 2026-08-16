@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from orchestrator.config import Settings
+from orchestrator.config import Settings, TriageMode
 from orchestrator.labels import State
 from orchestrator.service import Orchestrator
 from orchestrator.webhooks import Debouncer
@@ -19,13 +19,19 @@ APP_LOGIN = "cgsol-orchestrator[bot]"
 
 
 class Harness:
-    """Just enough Orchestrator to route an event. No GitHub, no Devin."""
+    """Just enough Orchestrator to route an event. No GitHub, no Devin.
+
+    Auto cadence, so that whether an event queues is a statement about the
+    sender filter rather than about the triage schedule.
+    """
 
     def __init__(self, app_slug: str = "") -> None:
         self.queued: list[int] = []
         self.human_turns: list[int] = []
         service = Orchestrator.__new__(Orchestrator)
-        service.settings = Settings(replay=True, github_app_slug=app_slug)
+        service.settings = Settings(
+            replay=True, github_app_slug=app_slug, triage_mode=TriageMode.AUTO
+        )
         service.debouncer = Debouncer(60, self._flush)
         service._count_human_turn = self.human_turns.append  # type: ignore[method-assign]
         service._refresh_issue = self._refresh  # type: ignore[method-assign]

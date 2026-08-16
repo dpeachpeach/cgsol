@@ -61,18 +61,25 @@ export function App() {
     setSnapshot((current) =>
       current === null
         ? current
-        : { ...current, cards: current.cards.map((c) => (c.number === card.number ? card : c)) },
+        : {
+            ...current,
+            cards: current.cards.map((c) =>
+              c.number === card.number ? card : c,
+            ),
+          },
     );
   }, []);
 
-  const syncedAt = snapshot ? new Date(snapshot.synced_at * 1000).toLocaleTimeString() : "—";
+  const syncedAt = snapshot
+    ? new Date(snapshot.synced_at * 1000).toLocaleTimeString()
+    : "—";
 
   return (
     <div className="app">
       <Navbar>
         <Navbar.Group align={Alignment.LEFT}>
-          <Navbar.Heading>
-            <strong>cgsol</strong> <span className="bp5-text-muted">security backlog</span>
+          <Navbar.Heading className="brand">
+            <strong>Superset Control Panel</strong>
           </Navbar.Heading>
           <Navbar.Divider />
           <Tabs
@@ -96,7 +103,12 @@ export function App() {
             synced {syncedAt}
           </Tag>
           <Navbar.Divider />
-          <Button minimal icon="refresh" onClick={() => void refresh()} title="Refresh now" />
+          <Button
+            minimal
+            icon="refresh"
+            onClick={() => void refresh()}
+            title="Refresh now"
+          />
           <Button
             minimal
             icon="predictive-analysis"
@@ -117,8 +129,15 @@ export function App() {
         )}
       </div>
 
-      <IssueDrawer number={selected} onClose={() => setSelected(null)} onChanged={onCardChanged} />
-      <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <IssueDrawer
+        number={selected}
+        onClose={() => setSelected(null)}
+        onChanged={onCardChanged}
+      />
+      <SettingsDialog
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
       <TriageDialog isOpen={triageOpen} onClose={() => setTriageOpen(false)} />
     </div>
   );

@@ -7,7 +7,13 @@ That is the intended pattern, not a fallback hack — a webhook is a hint that
 state changed, never the record of what it changed to.
 
 Polling is one tag-filtered list call per cycle, not one GET per session, and
-terminal sessions are never polled again.
+sessions whose result has been consumed are never fetched again.
+
+A session's result is consumed when it *settles*, which is not the same as
+finishing: Devin idles at ``waiting_for_user`` when it has said its piece and
+nobody replies, and only reaches ``finished`` if something puts it to sleep. A
+scout that produced its verdicts and then waited would otherwise sit there
+holding them forever.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ from orchestrator.config import Settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
 from orchestrator.github import GitHubClient
-from orchestrator.labels import State
+from orchestrator.labels import TERMINAL_STATES, State
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import IssueMeta, SessionInfo, Verdict
 from orchestrator.state import Store
@@ -47,7 +53,7 @@ class Poller:
         self.store = store
         self.dispatcher = dispatcher
         self.metrics = metrics
-        self._handled_terminal: set[str] = set()
+        self._consumed: set[str] = set()
         self._tasks: list[asyncio.Task[None]] = []
 
     # --- lifecycle ------------------------------------------------------------
@@ -107,13 +113,22 @@ class Poller:
         for session in sessions:
             previous = self.store.session(session.session_id)
             self.store.upsert_session(session)
-            if session.terminal and session.session_id not in self._handled_terminal:
-                self._handled_terminal.add(session.session_id)
-                await self._on_terminal(session)
-            elif previous is None and session.origin == "automation":
+            if previous is None and session.origin == "automation":
                 # Discovered, not dispatched: an Automation created this session
-                # and nobody told us. Convergence, not notification.
+                # and nobody told us. Convergence, not notification. Adoption is
+                # independent of status, because first sight and stopped are not
+                # mutually exclusive and there is no second first sight.
                 await self._adopt(session)
+            settled = session.terminal or session.waiting
+            # One GET, and only for a session that has stopped: a waiting session
+            # may be holding a result or may just be blocked, and the list payload
+            # does not carry structured output either way.
+            if (
+                settled
+                and session.session_id not in self._consumed
+                and await self._on_settled(session)
+            ):
+                self._consumed.add(session.session_id)
 
     async def _adopt(self, session: SessionInfo) -> None:
         number = session.issue_number
@@ -128,7 +143,14 @@ class Poller:
             {"issue": number, "session_id": session.session_id, "role": session.role},
         )
 
-    async def _on_terminal(self, summary: SessionInfo) -> None:
+    async def _on_settled(self, summary: SessionInfo) -> bool:
+        """Consume a stopped session's result. False means try again next cycle.
+
+        A session that stopped without a result is not necessarily done with:
+        ``waiting_for_user`` is also how Devin asks a question mid-flight, and
+        answering it later produces the output. Only a terminal session's
+        emptiness is final.
+        """
         detail = await self.devin.get_session(summary.session_id)
         self.store.upsert_session(detail)
         output: dict[str, Any] | None = detail.structured_output
@@ -137,24 +159,29 @@ class Poller:
         if role == "scout":
             verdicts = _parse_verdicts(output)
             if not verdicts:
-                log.warning("scout %s produced no verdicts", detail.session_id)
-                return
+                if detail.terminal:
+                    log.warning("scout %s produced no verdicts", detail.session_id)
+                    return True
+                return False
             await self.dispatcher.apply_verdicts(verdicts)
             await self.store.publish("scout.finished", {"verdicts": len(verdicts)})
-            return
+            return True
 
         number = detail.issue_number
         card = self.store.card(number) if number is not None else None
         if card is None:
-            return
+            return True
         card.meta.acus = max(card.meta.acus, detail.acus_consumed)
         if detail.status == "error":
             await self.dispatcher.escalate(card, "session-error", State.DEVIN_BLOCKED)
-            return
+            return True
+        if output is None and not detail.terminal:
+            return False
         if role == "ci-fix":
             await self.dispatcher.on_ci_fix_finished(card, output)
         elif role == "worker":
             await self.dispatcher.on_worker_finished(card, output)
+        return True
 
     # --- reconcile ------------------------------------------------------------
 
@@ -179,7 +206,16 @@ class Poller:
                 checks = await self.github.check_runs_for_ref(pr["head"]["sha"])
                 self.store.set_checks(issue.number, checks)
                 await self.dispatcher.evaluate_ci(card, checks, card.pr_merged)
-            if issue.state == "closed" and card.state not in (State.DONE, State.DEVIN_DECLINED):
+            # A close is only this pipeline's outcome if this pipeline was
+            # working the issue. Closing something it never touched is a
+            # maintainer clearing their own backlog, and closing something
+            # already terminal does not rewrite how it got there — count either
+            # as done and every headline that divides by merges inflates.
+            if (
+                issue.state == "closed"
+                and card.state is not None
+                and card.state not in TERMINAL_STATES
+            ):
                 card.state = State.DONE
 
         await self.poll_sessions()

@@ -25,18 +25,52 @@ safe.
 needs-triage → devin-eligible → devin-working → devin-pr-open → ci-failing ⇄ devin-fixing
                                                              ↘ human-review → done
              ↘ devin-declined                  ↘ devin-blocked
+             ↘ can-close-issue
 ```
+
+`can-close-issue` separates "there is no work here" from "an agent should not do
+this work". A stale backlog is full of issues already fixed upstream or
+duplicated elsewhere; retiring one costs a few minutes of reading and no code,
+which makes it the cheapest thing the pipeline produces. Triage only reaches it
+with evidence — the file it read and what that file contains now — and a human
+still does the closing.
+
+## Triage cadence
+
+When an untriaged issue becomes a scout session is a spend decision, so it is a
+setting rather than a property of the code path:
+
+| mode | behaviour |
+| --- | --- |
+| `auto` | Each arriving issue is triaged on its webhook, coalesced by the batch window. |
+| `chunked` | The untriaged backlog is swept on an interval (`TRIAGE_INTERVAL_SECONDS`, default 30 minutes) — one scout session per sweep instead of one per issue. |
+| `manual` | Nothing runs until someone presses *Triage backlog*. The default. |
+
+The sweep re-derives its candidates from GitHub rather than draining an in-memory
+queue, so issues that arrive while the orchestrator is down are still in the next
+chunk, and switching modes never strands anything.
 
 ## Verification
 
 Devin writes, CI verifies, Devin fixes what CI catches.
 
-Sessions never set up a development environment, never install dependencies
-beyond what the linter for the changed files needs, and never run the test suite.
-The repo's own pipeline is the gate — deliberately, because a maintainer trusts
-CI, not an agent's self-report. Left alone Devin will `npm ci` unprompted, because
-that is what a careful engineer does; the worker playbooks say not to, in those
-words.
+No session ever stands up Superset itself — no app, no database, no container.
+The repo's own pipeline is the gate, deliberately, because a maintainer trusts
+CI and not an agent's self-report.
+
+Whether a session may run *tests* is a tier decision, and a cost decision rather
+than a correctness one, since CI runs them either way:
+
+| tier | local verification |
+| --- | --- |
+| `trivial`, CI autofix | lint the changed files, push. A mechanical change that needs a test run was mis-tiered. |
+| `medium`, `hard` | may install and run **the touched workspace only** — one frontend package under jest, or `tests/unit_tests/<path>` — when a blind fix would plausibly cost a CI round. |
+
+A local pass buys a lower first-attempt failure rate, nothing more; the PR says
+what was run and what it showed. Sessions are capped at two hours of wall clock
+on top of their ACU ceiling, so a slow `npm ci` gets abandoned rather than
+watched. Whether the trade pays is exactly what the first-attempt failure rate
+in the metrics panel is there to answer.
 
 CI autofix is capped at three rounds. A fourth would be an infinite loop with a
 budget attached, so round three escalates to `human-review` with

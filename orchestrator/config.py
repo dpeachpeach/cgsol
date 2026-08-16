@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import base64
 import binascii
+from enum import Enum
 from functools import lru_cache
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class TriageMode(str, Enum):
+    """When an untriaged issue turns into a scout session.
+
+    ``AUTO`` reacts to the webhook, ``CHUNKED`` lets issues pile up and spends
+    once per interval, ``MANUAL`` only ever triages when a human asks. The
+    difference is entirely about who decides when money is spent.
+    """
+
+    AUTO = "auto"
+    CHUNKED = "chunked"
+    MANUAL = "manual"
 
 
 class Settings(BaseSettings):
@@ -51,6 +65,12 @@ class Settings(BaseSettings):
     playbook_remediate_hard: str = ""
     playbook_ci_autofix: str = ""
     knowledge_superset_conventions: str = ""
+
+    # --- Triage cadence -------------------------------------------------------
+    #: Manual by default: an orchestrator that starts spending ACUs the moment
+    #: it can see a backlog is not a demo anyone wants to run twice.
+    triage_mode: TriageMode = TriageMode.MANUAL
+    triage_interval_seconds: float = 1800
 
     # --- Policy ---------------------------------------------------------------
     confidence_threshold: float = 0.6

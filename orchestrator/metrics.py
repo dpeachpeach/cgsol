@@ -91,6 +91,9 @@ def compute(
 ) -> dict[str, Any]:
     pipeline_sessions = [s for s in sessions if BUILD_TAG not in s.tags]
     merged = [card for card in cards if card.pr_merged or card.state is State.DONE]
+    # Issues taken off the backlog without any code being written. The cheapest
+    # output the pipeline has, and invisible if it is filed under "declined".
+    retired = [card for card in cards if card.state is State.CAN_CLOSE_ISSUE]
     with_pr = [card for card in cards if card.meta.pr_url]
 
     # Autonomy: a merged PR that took zero human turns. Not "no human looked at
@@ -150,6 +153,7 @@ def compute(
             "total_acu": round(total_acu, 2),
             "build_acu": round(sum(s.acus_consumed for s in sessions if BUILD_TAG in s.tags), 2),
             "merged": len(merged),
+            "retired": len(retired),
         },
         "funnel": funnel,
         "by_tier": by_tier,
