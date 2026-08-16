@@ -191,6 +191,16 @@ class StateChange(BaseModel):
     state: State
 
 
+@app.post("/api/issues/{number}/triage")
+async def api_triage_issue(number: int) -> dict[str, Any]:
+    """Triage one card, for the operator who wants this issue looked at now
+    rather than the whole backlog. Same scout, same verdict path."""
+    service = get_orchestrator()
+    if service.store.card(number) is None:
+        raise HTTPException(status_code=404, detail="unknown issue")
+    return await service.triage_issue(number)
+
+
 @app.post("/api/issues/{number}/state")
 async def api_set_state(number: int, change: StateChange) -> dict[str, Any]:
     """Writes go straight through to GitHub, never queued behind a poll."""
@@ -205,6 +215,21 @@ async def api_set_state(number: int, change: StateChange) -> dict[str, Any]:
         "issue.state", {"issue": number, "to": change.state.value, "by": "human"}
     )
     return card.model_dump(mode="json")
+
+
+@app.post("/api/reconcile")
+async def api_reconcile() -> dict[str, Any]:
+    """Sweep GitHub now, rather than telling the caller what the last sweep saw.
+
+    The dashboard's refresh button used to re-read the projection, which is
+    exactly as stale as the projection is: a label changed on GitHub stayed
+    invisible for up to a reconcile interval no matter how often it was
+    pressed. An incremental sweep is a couple of reads and answers the question
+    the button appears to ask.
+    """
+    service = get_orchestrator()
+    await service.poller.reconcile()
+    return service.store.snapshot()
 
 
 @app.post("/api/triage")

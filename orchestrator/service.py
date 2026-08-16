@@ -273,6 +273,19 @@ class Orchestrator:
         await self.debouncer.flush_now()
         return {"queued": [issue.number for issue in candidates]}
 
+    async def triage_issue(self, number: int) -> dict[str, Any]:
+        """Triage one card, on demand, through the batch path the rest uses.
+
+        Flushing rather than waiting out the debounce window is the point: the
+        person pressing it is standing in front of the board. Anything already
+        pending rides along in the same scout, which is cheaper than two.
+        """
+        await self.debouncer.add(number)
+        pending = await self.debouncer.flush_now()
+        # The window may have expired between the two lines, in which case the
+        # issue is already with a scout — still queued, just not by this call.
+        return {"queued": sorted(pending | {number})}
+
     async def load_remote_config(self) -> dict[str, Any]:
         """Settings the fork carries, so a restart comes back with the operator's
         policy rather than the image's defaults."""
