@@ -13,7 +13,7 @@ import yaml
 from orchestrator.config import Settings, TriageMode, get_settings
 from orchestrator.devin import DevinClient
 from orchestrator.dispatch import Dispatcher
-from orchestrator.github import GitHubClient
+from orchestrator.github import GitHubClient, RateLimited
 from orchestrator.labels import State
 from orchestrator.metrics import MetricsRegistry
 from orchestrator.models import TriageEstimate
@@ -63,7 +63,18 @@ class Orchestrator:
     # --- events ---------------------------------------------------------------
 
     async def handle_event(self, event: str, payload: dict[str, Any]) -> str:
-        """Translate a webhook into intent. The poller does the converging."""
+        """Translate a webhook into intent, unless GitHub is out of budget.
+
+        A dropped event costs latency, not correctness: reconciliation is the
+        record, the webhook only ever a hint that something moved.
+        """
+        try:
+            return await self._handle_event(event, payload)
+        except RateLimited as limit:
+            log.warning("dropped %s event: %s", event, limit)
+            return "rate-limited"
+
+    async def _handle_event(self, event: str, payload: dict[str, Any]) -> str:
         # Three identities: "self" is this orchestrator (a PAT's human login, or
         # `<app-slug>[bot]` once it authenticates as an App), "bot" is Devin and
         # anything else automated, "human" is intent. Self-authored events are
