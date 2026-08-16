@@ -262,7 +262,7 @@ class Poller:
         card = self.store.card(number) if number is not None else None
         if card is None:
             return True
-        card.meta.acus = max(card.meta.acus, detail.acus_consumed)
+        card.meta.record_spend(detail.session_id, detail.acus_consumed)
         if detail.status == "error":
             await self.dispatcher.escalate(card, "session-error", State.DEVIN_BLOCKED)
             return True

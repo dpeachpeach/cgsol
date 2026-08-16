@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from orchestrator.labels import State, Tier
 
@@ -126,11 +126,34 @@ class IssueMeta(BaseModel):
     escalation: str | None = None
     scout_reasoning: str | None = None
     suggested_approach: str | None = None
-    acus: float = 0.0
+    #: What each session that worked this issue consumed, keyed by session id.
+    #: Kept per session rather than as a running total because the same session
+    #: is polled repeatedly and reports a cumulative figure, and because it
+    #: lives in the issue's metadata comment: spend survives the session being
+    #: archived, which is the only place ACUs are otherwise recoverable from.
+    session_acus: dict[str, float] = Field(default_factory=dict)
     #: When the PR appeared, as GitHub reports it. Read from the PR rather than
     #: recorded at dispatch so the figure survives a restart, a lost session, or
     #: a PR the orchestrator only found later.
     pr_opened_at: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _adopt_legacy_total(cls, data: Any) -> Any:
+        """Metadata comments written before the per-session breakdown carry a
+        single `acus` total. Keep it rather than reset the issue's spend to
+        zero; a later poll of a live session replaces its share."""
+        if isinstance(data, dict) and not data.get("session_acus") and data.get("acus"):
+            data = {**data, "session_acus": {"legacy": float(data["acus"])}}
+        return data
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def acus(self) -> float:
+        return sum(self.session_acus.values())
+
+    def record_spend(self, session_id: str, acus: float) -> None:
+        self.session_acus[session_id] = max(self.session_acus.get(session_id, 0.0), acus)
 
 
 class IssueCard(BaseModel):

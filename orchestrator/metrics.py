@@ -120,7 +120,19 @@ def compute(
     retired = [card for card in cards if card.state is State.CAN_CLOSE_ISSUE]
     with_pr = [card for card in cards if card.meta.pr_url]
 
-    total_acu = sum(session.acus_consumed for session in pipeline_sessions)
+    # Spend is read from live sessions where they exist and from what the
+    # issues' metadata comments recorded where they don't: a terminated and
+    # archived session stops being listed, and its ACUs would otherwise vanish
+    # from the total the moment the run is cleaned up.
+    live = {session.session_id: session.acus_consumed for session in pipeline_sessions}
+    build_ids = {session.session_id for session in sessions if BUILD_TAG in session.tags}
+    remembered: dict[str, float] = {}
+    for card in cards:
+        for session_id, acus in card.meta.session_acus.items():
+            if session_id in live or session_id in build_ids:
+                continue
+            remembered[session_id] = max(remembered.get(session_id, 0.0), acus)
+    total_acu = sum(live.values()) + sum(remembered.values())
 
     # The cost story in one number: everything the pipeline spent, over the
     # things it produced that a maintainer can actually merge. Triage, declines

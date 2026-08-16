@@ -56,6 +56,30 @@ def test_building_cgsol_is_not_charged_to_the_pipeline() -> None:
     assert headline["acu_per_ready_pr"] == 3.0
 
 
+def test_spend_survives_the_session_being_archived() -> None:
+    """Terminating a run drops it out of the session list. The issue's metadata
+    comment is the durable record, so the total does not fall back to zero."""
+    meta = IssueMeta(pr_url="p/1")
+    meta.record_spend("gone-1", 4.0)
+    meta.record_spend("gone-2", 2.0)
+    headline = compute([card(1, meta=meta, checks=green())], [])["headline"]
+    assert headline["total_acu"] == 6.0
+    assert headline["acu_per_ready_pr"] == 6.0
+
+
+def test_a_live_session_is_not_counted_twice_over_its_recorded_share() -> None:
+    meta = IssueMeta(pr_url="p/1")
+    meta.record_spend("s-live", 1.0)  # stale: the session now reports more
+    live = SessionInfo(session_id="s-live", acus_consumed=3.0, tags=["role:worker"])
+    headline = compute([card(1, meta=meta, checks=green())], [live])["headline"]
+    assert headline["total_acu"] == 3.0
+
+
+def test_a_pre_breakdown_metadata_comment_keeps_its_total() -> None:
+    meta = IssueMeta.model_validate({"pr_url": "p/1", "acus": 2.5})
+    assert meta.acus == 2.5
+
+
 def test_a_pending_check_is_not_a_ready_pr() -> None:
     cards = [card(1, meta=IssueMeta(pr_url="p/1"), checks=pending())]
     headline = compute(cards, [session(3.0)])["headline"]
